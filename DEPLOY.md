@@ -13,7 +13,7 @@
 ### 1.1 Tạo project Supabase
 1. Vào https://supabase.com → **New Project**
 2. Đặt tên project, chọn region **Southeast Asia (Singapore)**
-3. Đặt database password (lưu lại!)
+3. Đặt database password (lưu lại!) fE8&lD$f8zieKB%6
 4. Chờ ~2 phút để project khởi tạo
 
 ### 1.2 Chạy Schema SQL
@@ -23,10 +23,11 @@
 4. Nhấn **Run** (Ctrl+Enter)
 5. Kiểm tra không có lỗi
 
+
 ### 1.3 Lấy API Keys
 Vào **Settings → API**:
-- Copy **Project URL** → đây là `NEXT_PUBLIC_SUPABASE_URL`
-- Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Copy **Project URL** → đây là `NEXT_PUBLIC_SUPABASE_URL` sb_secret_0-pZLxp8ftVCr5rsDZb8mA_DG8AKs43
+- Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_ANON_KEY` sb_publishable_LoQ9yDhWdsgnFf0H_ekeSA_qIQkV9GO
 
 ### 1.4 Cấu hình Auth (quan trọng!)
 Vào **Authentication → URL Configuration**:
