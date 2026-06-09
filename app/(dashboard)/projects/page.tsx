@@ -173,9 +173,9 @@ export default function ProjectsPage() {
               {(p.start_date || p.end_date) && (
                 <div className="flex items-center gap-1 text-xs text-gray-400">
                   <Calendar className="w-3.5 h-3.5" />
-                  {p.start_date && format(new Date(p.start_date), 'dd/MM/yy')}
+                  {p.start_date && format(new Date(p.start_date), 'dd/MM/yyyy')}
                   {p.start_date && p.end_date && ' → '}
-                  {p.end_date && format(new Date(p.end_date), 'dd/MM/yy')}
+                  {p.end_date && format(new Date(p.end_date), 'dd/MM/yyyy')}
                 </div>
               )}
             </div>

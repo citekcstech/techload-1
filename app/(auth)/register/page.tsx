@@ -31,13 +31,32 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
 
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existing) {
+      setError('Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.');
+      setLoading(false);
+      return;
+    }
+
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName } },
     });
 
-    if (signUpError) { setError(signUpError.message); setLoading(false); return; }
+    if (signUpError) {
+      setError(signUpError.message === 'User already registered'
+        ? 'Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.'
+        : signUpError.message
+      );
+      setLoading(false);
+      return;
+    }
 
     if (data.user) {
       // Update profile with selected roles
@@ -47,7 +66,7 @@ export default function RegisterPage() {
         .eq('id', data.user.id);
     }
 
-    router.push('/dashboard');
+    window.location.href = '/dashboard';
   };
 
   return (

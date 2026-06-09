@@ -69,8 +69,9 @@ export default function TeamsPage() {
   const addMember = async (teamId: string) => {
     if (!selectedUserId) return;
     setSaving(true);
+    const normalizedWorkingHours = Math.max(1, Math.min(workingHours, 8));
     await supabase.from('team_members').upsert({
-      team_id: teamId, user_id: selectedUserId, working_hours_per_day: workingHours,
+      team_id: teamId, user_id: selectedUserId, working_hours_per_day: normalizedWorkingHours,
     }, { onConflict: 'team_id,user_id' });
     setSelectedUserId(''); setShowAddMember(null); setSaving(false);
     load();
@@ -187,7 +188,7 @@ export default function TeamsPage() {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">Giờ làm việc / ngày</label>
-                          <input type="number" className="input" min={1} max={12} value={workingHours} onChange={(e) => setWorkingHours(Number(e.target.value))} />
+                          <input type="number" className="input" min={1} max={8} value={workingHours} onChange={(e) => setWorkingHours(Math.max(1, Math.min(Number(e.target.value), 8)))} />
                         </div>
                         <div className="flex gap-2 justify-end">
                           <button onClick={() => setShowAddMember(null)} className="btn-secondary">Hủy</button>

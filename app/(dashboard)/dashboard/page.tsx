@@ -87,7 +87,7 @@ export default function DashboardPage() {
     const active = tasks.filter((t) => ['pending', 'in_progress', 'reopened'].includes(t.status));
     const done = tasks.filter((t) => t.status === 'completed');
     const overdue = active.filter((t) => new Date(t.deadline) < now);
-    const overloaded = workloadMembers.filter((m) => m.overloadRatio(nextWeek) >= 1);
+    const overloaded = workloadMembers.filter((m) => m.hasOverdue);
     return { active: active.length, done: done.length, overdue: overdue.length, overloaded: overloaded.length };
   }, [tasks, workloadMembers]);
 
@@ -173,9 +173,9 @@ export default function DashboardPage() {
                       <span className={`text-sm font-semibold ${overloadColor(ratio)}`}>
                         {active}h / {avail}h
                       </span>
-                      {ratio >= 1 && (
+                      {m.hasOverdue && (
                         <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                          Overload {Math.round((ratio - 1) * 100)}%
+                          Có task trễ lịch
                         </span>
                       )}
                     </div>

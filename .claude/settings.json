@@ -1,0 +1,30 @@
+{
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 150000,
+  "hooks": {
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"[Pre-compact] Giu lai: task dang lam, file dang edit, loi chua xu ly.\"}'",
+            "shell": "powershell",
+            "statusMessage": "Dang compact context window..."
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"[Post-compact] Context da duoc nen. Tiep tuc tu diem dung cuoi cung.\"}'",
+            "shell": "powershell",
+            "statusMessage": "Compact hoan tat"
+          }
+        ]
+      }
+    ]
+  }
+}

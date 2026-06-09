@@ -5,10 +5,11 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { Role, ROLE_LABELS } from '@/types';
+import { createClient } from '@/lib/supabase/client';
 import {
   Activity, LayoutDashboard, Users, FolderOpen,
   CheckSquare, Sliders, Settings, LogOut, ChevronDown,
-  Menu, X,
+  Menu, X, BarChart2, Bell,
 } from 'lucide-react';
 
 const NAV = [
@@ -16,6 +17,8 @@ const NAV = [
   { href: '/teams', label: 'Teams & Members', icon: Users },
   { href: '/projects', label: 'Dự án', icon: FolderOpen },
   { href: '/tasks', label: 'Tasks', icon: CheckSquare },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart2 },
+  { href: '/notifications', label: 'Thông báo', icon: Bell },
   { href: '/estimate-params', label: 'Estimate Params', icon: Sliders },
   { href: '/settings', label: 'Cài đặt', icon: Settings },
 ];
@@ -32,6 +35,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!profile) return;
+    const supabase = createClient();
+    supabase.from('notifications').select('id', { count: 'exact', head: true })
+      .eq('user_id', profile.id).eq('read', false)
+      .then(({ count }) => setUnreadCount(count ?? 0));
+  }, [profile]);
 
   useEffect(() => {
     if (!loading && !user) router.push('/login');
@@ -121,6 +133,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
                 {label}
+                {href === '/notifications' && unreadCount > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </Link>
             );
           })}

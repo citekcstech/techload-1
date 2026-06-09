@@ -32,7 +32,11 @@ Vào **Settings → API**:
 ### 1.4 Cấu hình Auth (quan trọng!)
 Vào **Authentication → URL Configuration**:
 - **Site URL**: `https://your-app.vercel.app` (điền sau khi có URL Vercel)
-- **Redirect URLs**: thêm `https://your-app.vercel.app/**`
+- **Redirect URLs**: thêm các URL sau:
+  - `https://your-app.vercel.app/**`
+  - `https://your-app.vercel.app/reset-password` ← bắt buộc để tính năng **đặt lại mật khẩu** hoạt động
+
+> **Lưu ý:** Nếu thiếu URL `/reset-password` trong Redirect URLs, link đặt lại mật khẩu gửi qua email sẽ bị Supabase chặn và người dùng không thể đổi mật khẩu.
 
 ---
 
@@ -73,7 +77,10 @@ Nhấn **Deploy** và chờ ~2 phút
 ### 3.4 Cập nhật Supabase URL
 Sau khi có URL Vercel (VD: `https://techload-abc123.vercel.app`):
 - Quay lại Supabase → **Authentication → URL Configuration**
-- Cập nhật **Site URL** và **Redirect URLs**
+- Cập nhật **Site URL**: `https://techload-abc123.vercel.app`
+- Cập nhật **Redirect URLs**, thêm:
+  - `https://techload-abc123.vercel.app/**`
+  - `https://techload-abc123.vercel.app/reset-password`
 
 ---
 

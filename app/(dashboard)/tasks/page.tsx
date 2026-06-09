@@ -3,10 +3,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Task, Project, Profile, EstimateParam, TeamMember, TaskStatus, TaskPriority, ROLE_LABELS, STATUS_LABELS, PRIORITY_LABELS } from '@/types';
-import { buildWorkloadMembers, suggestDeadline, suggestAssignees } from '@/lib/utils/workload';
-import { format, addDays } from 'date-fns';
-import { CheckSquare, Plus, X, Clock, AlertTriangle, Info, Search } from 'lucide-react';
+import {
+  Task, Project, EstimateParam, TeamMember,
+  TaskStatus, TaskPriority, TaskSeverity, RequestType, TaskSource,
+  STATUS_LABELS, PRIORITY_LABELS, SEVERITY_LABELS, REQUEST_TYPE_LABELS, SOURCE_LABELS,
+} from '@/types';
+import { buildWorkloadMembers, suggestDeadline, suggestAssignees, checkCapacityOnAdd, sortByExecution, scheduleMapForAssignee } from '@/lib/utils/workload';
+import { format, addDays, isValid, parse } from 'date-fns';
+import { CheckSquare, Plus, X, Clock, AlertTriangle, Info, Search, Calendar, CheckCircle, ChevronDown, ChevronRight, Inbox } from 'lucide-react';
 import Link from 'next/link';
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -17,10 +21,51 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 };
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
-  pending: 'bg-gray-100 text-gray-600',
-  in_progress: 'bg-blue-100 text-blue-700',
-  completed: 'bg-green-100 text-green-700',
-  reopened: 'bg-orange-100 text-orange-700',
+  backlog:          'bg-purple-100 text-purple-700',
+  pending:          'bg-gray-100 text-gray-600',
+  in_progress:      'bg-blue-100 text-blue-700',
+  blocked:          'bg-red-100 text-red-700',
+  ready_for_review: 'bg-yellow-100 text-yellow-800',
+  completed:        'bg-green-100 text-green-700',
+  reopened:         'bg-orange-100 text-orange-700',
+  cancelled:        'bg-gray-200 text-gray-500',
+};
+
+const STORAGE_DATE_TIME_FORMAT = "yyyy-MM-dd'T'HH:mm";
+const DISPLAY_DATE_TIME_FORMAT = 'dd/MM/yyyy HH:mm';
+
+const toDisplayDeadline = (value: string) => format(new Date(value), DISPLAY_DATE_TIME_FORMAT);
+
+const parseDisplayDeadline = (value: string) => {
+  const parsed = parse(value.trim(), DISPLAY_DATE_TIME_FORMAT, new Date());
+  return isValid(parsed) ? format(parsed, STORAGE_DATE_TIME_FORMAT) : null;
+};
+
+type CreateCapacityWarning = {
+  name: string;
+  projectedCompletion: Date;
+  deadline: Date;
+  affectedTasksCount: number;
+  willMiss: boolean;
+  workingHoursPerDay: number;
+};
+
+type FormState = {
+  title: string;
+  description: string;
+  project_id: string;
+  assignee_id: string;
+  priority: TaskPriority;
+  severity: TaskSeverity | '';
+  request_type: RequestType | '';
+  module: string;
+  source: TaskSource | '';
+  requester: string;
+  business_impact: string;
+  acceptance_criteria: string;
+  estimated_hours: number;
+  deadline: string;
+  estimate_param_id: string;
 };
 
 export default function TasksPage() {
@@ -38,17 +83,26 @@ export default function TasksPage() {
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [showBacklog, setShowBacklog] = useState(true);
+  const [showCancelled, setShowCancelled] = useState(false);
 
   // Create task form
+  const defaultDeadline = format(addDays(new Date(), 3), STORAGE_DATE_TIME_FORMAT);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    title: '', description: '', project_id: '', assignee_id: '', priority: 'medium' as TaskPriority,
-    estimated_hours: 4, deadline: format(addDays(new Date(), 3), 'yyyy-MM-dd\'T\'HH:mm'),
-    estimate_param_id: '',
+  const [form, setForm] = useState<FormState>({
+    title: '', description: '', project_id: '', assignee_id: '',
+    priority: 'medium', severity: '', request_type: '', module: '',
+    source: '', requester: '', business_impact: '', acceptance_criteria: '',
+    estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
   });
+  const [deadlineInput, setDeadlineInput] = useState(toDisplayDeadline(defaultDeadline));
+  const [deadlineError, setDeadlineError] = useState('');
+  const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [suggestedDeadline, setSuggestedDeadline] = useState<string | null>(null);
   const [suggestedAssignees, setSuggestedAssignees] = useState<any[]>([]);
+  const [capacityWarning, setCapacityWarning] = useState<CreateCapacityWarning | null>(null);
 
   const load = async () => {
     if (!profile) return;
@@ -74,7 +128,6 @@ export default function TasksPage() {
         .in('project_id', projIds)
         .order('created_at', { ascending: false });
 
-      // Technical only sees their assigned tasks
       if (activeRole === 'technical') {
         query = query.eq('assignee_id', profile.id);
       }
@@ -87,28 +140,62 @@ export default function TasksPage() {
 
   useEffect(() => { load(); }, [profile?.id, activeRole]);
 
-  // Auto-suggest when form changes
-  useEffect(() => {
-    if (!form.estimated_hours || !form.deadline || !form.project_id) return;
+  const buildCreateCapacityWarning = (deadlineValue: string | Date = form.deadline): CreateCapacityWarning | null => {
+    if (!form.assignee_id || !form.project_id || !form.estimated_hours) return null;
+    const deadline = deadlineValue instanceof Date ? deadlineValue : new Date(deadlineValue);
+    if (Number.isNaN(deadline.getTime())) return null;
     const projectTeam = projects.find((p) => p.id === form.project_id)?.team_id;
-    if (!projectTeam) return;
+    if (!projectTeam) return null;
+    const projMembers = teamMembers.filter((m) => m.team_id === projectTeam);
+    const workload = buildWorkloadMembers(projMembers, tasks);
+    const member = workload.find((m) => m.userId === form.assignee_id);
+    if (!member) return null;
+    const check = checkCapacityOnAdd(member, form.estimated_hours, deadline, form.priority);
+    if (!check.willMiss && check.affectedTasks.length === 0) return null;
+    return {
+      name: member.userName,
+      projectedCompletion: check.projectedCompletion,
+      deadline,
+      affectedTasksCount: check.affectedTasks.length,
+      willMiss: check.willMiss,
+      workingHoursPerDay: member.workingHoursPerDay,
+    };
+  };
+
+  useEffect(() => {
+    if (!form.estimated_hours || !form.deadline || !form.project_id) {
+      setSuggestedAssignees([]);
+      setSuggestedDeadline(null);
+      setCapacityWarning(null);
+      return;
+    }
+    const projectTeam = projects.find((p) => p.id === form.project_id)?.team_id;
+    if (!projectTeam) {
+      setSuggestedAssignees([]);
+      setSuggestedDeadline(null);
+      setCapacityWarning(null);
+      return;
+    }
     const projMembers = teamMembers.filter((m) => m.team_id === projectTeam);
     const workload = buildWorkloadMembers(projMembers, tasks);
     const dl = new Date(form.deadline);
-
-    // Suggest assignees
-    const suggestions = suggestAssignees(workload, dl, form.estimated_hours, 3);
+    const suggestions = suggestAssignees(workload, dl, form.estimated_hours, 3, form.priority);
     setSuggestedAssignees(suggestions);
-
-    // Suggest deadline for selected assignee
     if (form.assignee_id) {
       const member = workload.find((m) => m.userId === form.assignee_id);
       if (member) {
         const suggested = suggestDeadline(member, form.estimated_hours);
-        setSuggestedDeadline(format(suggested, 'yyyy-MM-dd\'T\'HH:mm'));
+        setSuggestedDeadline(format(suggested, "yyyy-MM-dd'T'HH:mm"));
+        setCapacityWarning(buildCreateCapacityWarning(dl));
+      } else {
+        setSuggestedDeadline(null);
+        setCapacityWarning(null);
       }
+    } else {
+      setSuggestedDeadline(null);
+      setCapacityWarning(null);
     }
-  }, [form.estimated_hours, form.deadline, form.project_id, form.assignee_id]);
+  }, [form.estimated_hours, form.deadline, form.project_id, form.assignee_id, form.priority, projects, teamMembers, tasks]);
 
   const handleParamSelect = (paramId: string) => {
     const param = estimateParams.find((p) => p.id === paramId);
@@ -116,26 +203,112 @@ export default function TasksPage() {
     else setForm((f) => ({ ...f, estimate_param_id: '' }));
   };
 
-  const createTask = async () => {
+  const handleDeadlineInputChange = (value: string) => {
+    setDeadlineInput(value);
+    const parsed = parseDisplayDeadline(value);
+    if (parsed) {
+      setForm((f) => ({ ...f, deadline: parsed }));
+      setDeadlineError('');
+    } else {
+      setSuggestedDeadline(null);
+      setCapacityWarning(null);
+    }
+  };
+
+  const applyDeadline = (deadline: string) => {
+    setForm((f) => ({ ...f, deadline }));
+    setDeadlineInput(toDisplayDeadline(deadline));
+    setDeadlineError('');
+  };
+
+  const persistSchedule = async (assigneeId: string, allTasks: Task[]) => {
+    const tm = teamMembers.find((m) => m.user_id === assigneeId);
+    if (!tm) return;
+    const mine = allTasks.filter(
+      (t) => t.assignee_id === assigneeId && ['pending', 'in_progress', 'reopened'].includes(t.status)
+    );
+    const map = scheduleMapForAssignee(mine, tm.working_hours_per_day);
+    await Promise.all(
+      Object.entries(map).map(([id, pc]) =>
+        supabase.from('tasks').update({ projected_completion: pc }).eq('id', id)
+      )
+    );
+  };
+
+  const resetForm = () => {
+    setForm({
+      title: '', description: '', project_id: '', assignee_id: '',
+      priority: 'medium', severity: '', request_type: '', module: '',
+      source: '', requester: '', business_impact: '', acceptance_criteria: '',
+      estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
+    });
+    setDeadlineInput(toDisplayDeadline(defaultDeadline));
+    setDeadlineError('');
+    setFormError('');
+    setCapacityWarning(null);
+  };
+
+  const createTask = async (asBacklog = false) => {
     if (!form.title.trim() || !form.project_id || !profile) return;
+    setFormError('');
+
+    const parsedDeadline = parseDisplayDeadline(deadlineInput);
+    if (!parsedDeadline) {
+      setDeadlineError('Nhập deadline theo định dạng dd/MM/yyyy HH:mm');
+      return;
+    }
+
+    if (!asBacklog) {
+      if (!form.acceptance_criteria.trim()) {
+        setFormError('Vui lòng nhập acceptance criteria. Hoặc bấm "Lưu tạm (Backlog)" nếu chưa đủ thông tin.');
+        return;
+      }
+      const latestWarning = buildCreateCapacityWarning(new Date(parsedDeadline));
+      if (latestWarning) {
+        const sameWarning =
+          capacityWarning?.name === latestWarning.name &&
+          capacityWarning?.projectedCompletion.getTime() === latestWarning.projectedCompletion.getTime() &&
+          capacityWarning?.deadline.getTime() === latestWarning.deadline.getTime() &&
+          capacityWarning?.affectedTasksCount === latestWarning.affectedTasksCount;
+        setCapacityWarning(latestWarning);
+        if (!sameWarning) return;
+      } else {
+        setCapacityWarning(null);
+      }
+    }
+
     setSaving(true);
-    await supabase.from('tasks').insert({
+    const { data: inserted, error } = await supabase.from('tasks').insert({
       title: form.title.trim(),
       description: form.description.trim() || null,
       project_id: form.project_id,
       assignee_id: form.assignee_id || null,
       created_by: profile.id,
       priority: form.priority,
+      severity: form.severity || null,
+      request_type: form.request_type || null,
+      module: form.module.trim() || null,
+      source: form.source || null,
+      requester: form.requester.trim() || null,
+      business_impact: form.business_impact.trim() || null,
+      acceptance_criteria: form.acceptance_criteria.trim() || null,
       estimated_hours: form.estimated_hours,
-      deadline: form.deadline,
+      deadline: parsedDeadline,
       estimate_param_id: form.estimate_param_id || null,
-      status: 'pending',
-    });
-    setShowForm(false); setSaving(false);
+      status: asBacklog ? 'backlog' : 'pending',
+    }).select().single();
+
+    if (!error && inserted && form.assignee_id && !asBacklog) {
+      await persistSchedule(form.assignee_id, [...tasks, inserted as Task]);
+    }
+    setShowForm(false);
+    setSaving(false);
+    setCapacityWarning(null);
+    resetForm();
     load();
   };
 
-  const filtered = useMemo(() => tasks.filter((t) => {
+  const baseFiltered = useMemo(() => tasks.filter((t) => {
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
     if (filterProject !== 'all' && t.project_id !== filterProject) return false;
     if (filterAssignee !== 'all' && t.assignee_id !== filterAssignee) return false;
@@ -143,7 +316,118 @@ export default function TasksPage() {
     return true;
   }), [tasks, filterStatus, filterProject, filterAssignee, search]);
 
+  const backlogList = useMemo(
+    () => baseFiltered.filter((t) => t.status === 'backlog')
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    [baseFiltered]
+  );
+
+  const activeList = useMemo(
+    () => sortByExecution(baseFiltered.filter((t) => !['completed', 'backlog', 'cancelled'].includes(t.status))),
+    [baseFiltered]
+  );
+
+  const cancelledList = useMemo(
+    () => baseFiltered
+      .filter((t) => t.status === 'cancelled')
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+    [baseFiltered]
+  );
+
+  const completedList = useMemo(
+    () => baseFiltered
+      .filter((t) => t.status === 'completed')
+      .sort((a, b) =>
+        new Date(b.completed_at ?? b.updated_at).getTime() -
+        new Date(a.completed_at ?? a.updated_at).getTime()
+      ),
+    [baseFiltered]
+  );
+
   const canCreate = activeRole === 'consultant' || activeRole === 'lead_technical';
+
+  const renderTaskCard = (task: Task) => {
+    const isCompleted = task.status === 'completed';
+    const isBacklog = task.status === 'backlog';
+    const isOverdue = new Date(task.deadline) < new Date() && !isCompleted && !isBacklog;
+    const reopenCount = task.task_reopens?.length ?? 0;
+    const willMiss = task.projected_completion != null && !isCompleted &&
+      new Date(task.projected_completion) > new Date(task.deadline);
+    return (
+      <Link key={task.id} href={`/tasks/${task.id}`}>
+        <div className={`card p-4 hover:shadow-md transition-shadow cursor-pointer ${isCompleted ? 'opacity-70' : ''}`}>
+          <div className="flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className={`font-medium text-gray-900 ${isCompleted ? 'line-through text-gray-500' : ''}`}>{task.title}</span>
+                {isOverdue && <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />}
+                {!task.acceptance_criteria && !isCompleted && !isBacklog && (
+                  <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">Thiếu AC</span>
+                )}
+                {task.status === 'blocked' && (
+                  <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Blocked</span>
+                )}
+                {task.status === 'ready_for_review' && (
+                  <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded font-medium">Chờ review</span>
+                )}
+                {reopenCount > 0 && (
+                  <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
+                    Re-open ×{reopenCount}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
+                <span>{(task.project as any)?.name}</span>
+                {task.request_type && (
+                  <>
+                    <span>•</span>
+                    <span>{REQUEST_TYPE_LABELS[task.request_type]}</span>
+                  </>
+                )}
+                <span>•</span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> {task.estimated_hours}h
+                </span>
+                <span>•</span>
+                {isCompleted ? (
+                  <span className="flex items-center gap-1 text-green-600">
+                    <CheckCircle className="w-3 h-3" />
+                    HT {task.completed_at ? format(new Date(task.completed_at), 'dd/MM/yyyy') : ''}
+                  </span>
+                ) : (
+                  <>
+                    <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
+                      {format(new Date(task.deadline), 'dd/MM/yyyy')}
+                    </span>
+                    {task.projected_completion && !isBacklog && (
+                      <>
+                        <span>•</span>
+                        <span className={willMiss ? 'text-red-600 font-medium' : 'text-gray-500'}>
+                          HT dự kiến {format(new Date(task.projected_completion), 'dd/MM/yyyy HH:mm')}
+                        </span>
+                      </>
+                    )}
+                    {willMiss && (
+                      <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Trễ</span>
+                    )}
+                  </>
+                )}
+                {task.assignee && <span>• {(task.assignee as any).full_name}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${PRIORITY_COLORS[task.priority]}`}>
+                {PRIORITY_LABELS[task.priority]}
+              </span>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[task.status]}`}>
+                {STATUS_LABELS[task.status]}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  };
 
   if (loading) return <div className="flex justify-center py-20"><div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -152,10 +436,14 @@ export default function TasksPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{filtered.length} / {tasks.length} task</p>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {backlogList.length > 0 && `${backlogList.length} backlog • `}
+            {activeList.length} đang xử lý • {completedList.length} hoàn thành
+            {cancelledList.length > 0 && ` • ${cancelledList.length} đã hủy`}
+          </p>
         </div>
         {canCreate && (
-          <button onClick={() => setShowForm(true)} className="btn-primary flex items-center gap-2">
+          <button onClick={() => { resetForm(); setShowForm(true); }} className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" /> Tạo task
           </button>
         )}
@@ -185,69 +473,115 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* Task list */}
-      {filtered.length === 0 ? (
+      {/* Backlog section */}
+      {backlogList.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowBacklog((v) => !v)}
+            className="flex items-center gap-2 text-sm font-medium text-purple-700 hover:text-purple-900 transition-colors"
+          >
+            {showBacklog ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <Inbox className="w-4 h-4" />
+            Backlog — chờ triage ({backlogList.length})
+            <span className="text-xs font-normal text-purple-500">· Cần bổ sung acceptance criteria</span>
+          </button>
+          {showBacklog && (
+            <div className="space-y-2">
+              {backlogList.map(renderTaskCard)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Task đang xử lý */}
+      {activeList.length === 0 && completedList.length === 0 && backlogList.length === 0 ? (
         <div className="card p-12 text-center">
           <CheckSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">Không có task nào</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((task) => {
-            const isOverdue = new Date(task.deadline) < new Date() && task.status !== 'completed';
-            const reopenCount = task.task_reopens?.length ?? 0;
-            return (
-              <Link key={task.id} href={`/tasks/${task.id}`}>
-                <div className="card p-4 hover:shadow-md transition-shadow cursor-pointer">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="font-medium text-gray-900">{task.title}</span>
-                        {isOverdue && <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                        {reopenCount > 0 && (
-                          <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
-                            Re-open ×{reopenCount}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
-                        <span>{(task.project as any)?.name}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> {task.estimated_hours}h
-                        </span>
-                        <span>•</span>
-                        <span className={isOverdue ? 'text-red-600 font-medium' : ''}>
-                          {format(new Date(task.deadline), 'dd/MM/yyyy')}
-                        </span>
-                        {task.assignee && <span>• {(task.assignee as any).full_name}</span>}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${PRIORITY_COLORS[task.priority]}`}>
-                        {PRIORITY_LABELS[task.priority]}
-                      </span>
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[task.status]}`}>
-                        {STATUS_LABELS[task.status]}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+          {activeList.length === 0 && backlogList.length === 0 ? null : activeList.length === 0 ? null : (
+            activeList.map(renderTaskCard)
+          )}
+        </div>
+      )}
+
+      {/* Task đã hoàn thành (thu gọn) */}
+      {completedList.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowCompleted((v) => !v)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            {showCompleted ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            Đã hoàn thành ({completedList.length})
+          </button>
+          {showCompleted && (
+            <div className="space-y-2">
+              {completedList.map(renderTaskCard)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Task đã hủy (thu gọn) */}
+      {cancelledList.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowCancelled((v) => !v)}
+            className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            {showCancelled ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            <span className="w-4 h-4 text-gray-400">✕</span>
+            Đã hủy ({cancelledList.length})
+          </button>
+          {showCancelled && (
+            <div className="space-y-2 opacity-60">
+              {cancelledList.map(renderTaskCard)}
+            </div>
+          )}
         </div>
       )}
 
       {/* Create task modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-lg font-semibold">Tạo task mới</h2>
               <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <div className="p-6 space-y-4">
+              {capacityWarning && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <span className="font-medium">{capacityWarning.name}</span> sẽ hoàn thành dự kiến{' '}
+                    <span className="font-medium">{format(capacityWarning.projectedCompletion, 'dd/MM/yyyy HH:mm')}</span>
+                    {capacityWarning.willMiss && (
+                      <> sau deadline <span className="font-medium">{format(capacityWarning.deadline, 'dd/MM/yyyy HH:mm')}</span></>
+                    )}
+                    {capacityWarning.affectedTasksCount > 0 && (
+                      <> và có thể đẩy {capacityWarning.affectedTasksCount} task khác sang trễ</>
+                    )}.
+                    {suggestedDeadline && (
+                      <> Đề xuất dời deadline sang {format(new Date(suggestedDeadline), 'dd/MM/yyyy HH:mm')} hoặc giao cho thành viên khác.</>
+                    )}
+                    <div className="text-xs mt-0.5 text-red-500">
+                      Lịch được chia tối đa {capacityWarning.workingHoursPerDay}h/ngày, không xếp sau 17:30.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {formError && (
+                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-lg p-3">
+                  {formError}
+                </div>
+              )}
+
+              {/* Thông tin cơ bản */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề *</label>
                 <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Mô tả ngắn yêu cầu..." />
@@ -259,6 +593,43 @@ export default function TasksPage() {
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
+
+              {/* Phân loại yêu cầu */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Loại yêu cầu</label>
+                  <select className="input" value={form.request_type} onChange={(e) => setForm({ ...form, request_type: e.target.value as RequestType | '' })}>
+                    <option value="">-- Chọn loại --</option>
+                    {Object.entries(REQUEST_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Mức ảnh hưởng (Severity)</label>
+                  <select className="input" value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value as TaskSeverity | '' })}>
+                    <option value="">-- Chọn mức --</option>
+                    {Object.entries(SEVERITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Module / Phân hệ</label>
+                  <input className="input" value={form.module} onChange={(e) => setForm({ ...form, module: e.target.value })} placeholder="VD: Kế toán, Nhân sự..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nguồn yêu cầu</label>
+                  <select className="input" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value as TaskSource | '' })}>
+                    <option value="">-- Chọn nguồn --</option>
+                    {Object.entries(SOURCE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Người yêu cầu</label>
+                <input className="input" value={form.requester} onChange={(e) => setForm({ ...form, requester: e.target.value })} placeholder="Tên người hoặc bộ phận yêu cầu..." />
+              </div>
+
+              {/* Estimate & deadline */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Estimate từ param</label>
@@ -277,11 +648,31 @@ export default function TasksPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Deadline *</label>
-                  <input type="datetime-local" className="input" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      className="input pr-10"
+                      value={deadlineInput}
+                      onChange={(e) => handleDeadlineInputChange(e.target.value)}
+                      onBlur={() => {
+                        if (!parseDisplayDeadline(deadlineInput)) setDeadlineError('Nhập deadline theo định dạng dd/MM/yyyy HH:mm');
+                      }}
+                      placeholder="dd/MM/yyyy HH:mm"
+                    />
+                    <input
+                      type="datetime-local"
+                      className="absolute inset-y-0 right-0 w-10 opacity-0 cursor-pointer"
+                      value={form.deadline}
+                      onChange={(e) => applyDeadline(e.target.value)}
+                      aria-label="Chọn deadline"
+                    />
+                    <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  </div>
+                  {deadlineError && <p className="mt-1 text-xs text-red-600">{deadlineError}</p>}
                   {suggestedDeadline && suggestedDeadline !== form.deadline && (
                     <button
                       className="mt-1 text-xs text-blue-600 hover:underline flex items-center gap-1"
-                      onClick={() => setForm({ ...form, deadline: suggestedDeadline })}
+                      onClick={() => applyDeadline(suggestedDeadline)}
                     >
                       <Info className="w-3 h-3" />
                       Đề xuất: {format(new Date(suggestedDeadline), 'dd/MM/yyyy HH:mm')}
@@ -289,7 +680,7 @@ export default function TasksPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ưu tiên</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ưu tiên (Priority)</label>
                   <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value as TaskPriority })}>
                     {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
@@ -311,21 +702,51 @@ export default function TasksPage() {
                     .map((m) => {
                       const suggested = suggestedAssignees.find((s) => s.userId === m.user_id);
                       const label = suggested
-                        ? `${(m as any).profile?.full_name} ✓ tải ${Math.round(suggested.ratioAfterAssign * 100)}%`
+                        ? `${(m as any).profile?.full_name} — HT dự kiến ${format(suggested.projectedCompletion, 'dd/MM/yyyy HH:mm')}${suggested.willMiss ? ' ⚠ trễ' : ' ✓'}`
                         : (m as any).profile?.full_name;
                       return <option key={m.user_id} value={m.user_id}>{label}</option>;
                     })}
                 </select>
               </div>
+
+              {/* Nội dung chi tiết */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Acceptance Criteria *
+                  <span className="font-normal text-gray-500 ml-1 text-xs">(bắt buộc để tạo task, bỏ trống để lưu backlog)</span>
+                </label>
+                <textarea
+                  className={`input resize-none ${formError && !form.acceptance_criteria.trim() ? 'border-yellow-400' : ''}`}
+                  rows={3}
+                  value={form.acceptance_criteria}
+                  onChange={(e) => { setForm({ ...form, acceptance_criteria: e.target.value }); if (formError) setFormError(''); }}
+                  placeholder="Điều kiện để task được coi là hoàn thành..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ảnh hưởng nghiệp vụ</label>
+                <textarea className="input resize-none" rows={2} value={form.business_impact} onChange={(e) => setForm({ ...form, business_impact: e.target.value })} placeholder="Nghiệp vụ nào bị ảnh hưởng nếu không làm / làm sai..." />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chi tiết</label>
-                <textarea className="input resize-none" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Yêu cầu chi tiết, acceptance criteria..." />
+                <textarea className="input resize-none" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Chi tiết kỹ thuật, context bổ sung..." />
               </div>
             </div>
             <div className="flex gap-2 justify-end px-6 pb-6">
               <button onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
-              <button onClick={createTask} disabled={saving || !form.title.trim() || !form.project_id} className="btn-primary">
-                {saving ? 'Đang tạo...' : 'Tạo task'}
+              <button
+                onClick={() => createTask(true)}
+                disabled={saving || !form.title.trim() || !form.project_id}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
+              >
+                Lưu tạm (Backlog)
+              </button>
+              <button
+                onClick={() => createTask(false)}
+                disabled={saving || !form.title.trim() || !form.project_id}
+                className="btn-primary"
+              >
+                {saving ? 'Đang tạo...' : capacityWarning ? 'Tạo dù cảnh báo' : 'Tạo task'}
               </button>
             </div>
           </div>
