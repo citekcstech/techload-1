@@ -27,7 +27,7 @@
 ### 1.3 Lấy API Keys
 Vào **Settings → API**:
 - Copy **Project URL** → đây là `NEXT_PUBLIC_SUPABASE_URL` sb_secret_0-pZLxp8ftVCr5rsDZb8mA_DG8AKs43
-- Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_ANON_KEY` sb_publishable_LoQ9yDhWdsgnFf0H_ekeSA_qIQkV9GO
+- Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` sb_publishable_LoQ9yDhWdsgnFf0H_ekeSA_qIQkV9GO
 
 ### 1.4 Cấu hình Auth (quan trọng!) 
 https://vercel.com/sang-thanh-s-projects
@@ -70,7 +70,7 @@ Trong bước Configure Project, thêm:
 | Key | Value |
 |-----|-------|
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://xxxx.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` |
 
 ### 3.3 Deploy
 Nhấn **Deploy** và chờ ~2 phút
@@ -119,7 +119,7 @@ npm install
 
 # Copy env
 cp .env.example .env.local
-# Điền NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Điền NEXT_PUBLIC_SUPABASE_URL và NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
 # Chạy dev server
 npm run dev
