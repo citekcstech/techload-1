@@ -29,7 +29,8 @@ Vào **Settings → API**:
 - Copy **Project URL** → đây là `NEXT_PUBLIC_SUPABASE_URL` sb_secret_0-pZLxp8ftVCr5rsDZb8mA_DG8AKs43
 - Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_ANON_KEY` sb_publishable_LoQ9yDhWdsgnFf0H_ekeSA_qIQkV9GO
 
-### 1.4 Cấu hình Auth (quan trọng!)
+### 1.4 Cấu hình Auth (quan trọng!) 
+https://vercel.com/sang-thanh-s-projects
 Vào **Authentication → URL Configuration**:
 - **Site URL**: `https://your-app.vercel.app` (điền sau khi có URL Vercel)
 - **Redirect URLs**: thêm các URL sau:
