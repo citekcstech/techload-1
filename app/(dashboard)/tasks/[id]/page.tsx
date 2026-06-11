@@ -337,12 +337,11 @@ export default function TaskDetailPage() {
   const willMiss = task.projected_completion != null && task.status !== 'completed' &&
     new Date(task.projected_completion) > new Date(task.deadline);
   const isAssignee = profile?.id === task.assignee_id;
-  const canManage = activeRole === 'consultant' || activeRole === 'lead_technical';
+  const canManage = activeRole === 'lead_technical';
   const isTechnical = activeRole === 'technical';
   const isTerminal = task.status === 'completed' || task.status === 'cancelled';
   const isStarted = ['in_progress', 'blocked', 'ready_for_review', 'reopened'].includes(task.status);
-  const consultantLocked = activeRole === 'consultant' && isStarted;
-  const canEdit = canManage && !isTerminal && !consultantLocked;
+  const canEdit = canManage && !isTerminal;
   const baselineHours = task.baseline_estimated_hours ?? task.estimated_hours;
 
   return (
@@ -565,7 +564,7 @@ export default function TaskDetailPage() {
           {task.status === 'ready_for_review' && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2 text-sm text-yellow-800">
               <Eye className="w-4 h-4 flex-shrink-0" />
-              Task đã sẵn sàng để review / UAT — đang chờ consultant xác nhận hoàn thành.
+              Task đã sẵn sàng để review / UAT — đang chờ Lead Technical xác nhận hoàn thành.
             </div>
           )}
 
@@ -659,9 +658,6 @@ export default function TaskDetailPage() {
                   <User className="w-4 h-4" /> {task.assignee_id ? 'Đổi assignee' : 'Assign'}
                 </button>
               )}
-              {!isAssignee && task.assignee_id && consultantLocked && (
-                <span className="text-xs text-gray-400 italic self-center">Task đang xử lý — chỉ Lead có thể chỉnh</span>
-              )}
               {canEdit && (
                 <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
                   <Clock className="w-4 h-4" /> Chỉnh estimate
@@ -678,7 +674,7 @@ export default function TaskDetailPage() {
 
       </>)}
 
-      {activeTab === 'subtasks' && <SubtaskPanel taskId={id} canEdit={activeRole === 'consultant' || activeRole === 'lead_technical'} />}
+      {activeTab === 'subtasks' && <SubtaskPanel taskId={id} canEdit={activeRole === 'lead_technical'} />}
 
       {activeTab === 'comments' && <CommentsPanel taskId={id} currentUserId={profile?.id ?? ''} />}
 

@@ -6,8 +6,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { Role, ROLE_LABELS } from '@/types';
 import { User, Lock, Shield, Save } from 'lucide-react';
 
-const ALL_ROLES: Role[] = ['consultant', 'technical', 'lead_technical'];
-
 export default function SettingsPage() {
   const { profile, refreshProfile, switchRole } = useAuth();
   const supabase = createClient();
@@ -24,11 +22,6 @@ export default function SettingsPage() {
   const [savingPw, setSavingPw] = useState(false);
   const [pwMsg, setPwMsg] = useState('');
   const [pwError, setPwError] = useState('');
-
-  // Roles form
-  const [selectedRoles, setSelectedRoles] = useState<Role[]>(profile?.roles ?? []);
-  const [savingRoles, setSavingRoles] = useState(false);
-  const [rolesMsg, setRolesMsg] = useState('');
 
   const saveProfile = async () => {
     if (!profile || !fullName.trim()) return;
@@ -49,22 +42,6 @@ export default function SettingsPage() {
     else { setPwMsg('Đã đổi mật khẩu!'); setCurrentPw(''); setNewPw(''); setConfirmPw(''); }
     setSavingPw(false);
     setTimeout(() => setPwMsg(''), 3000);
-  };
-
-  const toggleRole = (role: Role) => {
-    setSelectedRoles((prev) =>
-      prev.includes(role) ? (prev.length > 1 ? prev.filter((r) => r !== role) : prev) : [...prev, role]
-    );
-  };
-
-  const saveRoles = async () => {
-    if (!profile) return;
-    setSavingRoles(true);
-    const newActive = selectedRoles.includes(profile.active_role) ? profile.active_role : selectedRoles[0];
-    await supabase.from('profiles').update({ roles: selectedRoles, active_role: newActive }).eq('id', profile.id);
-    await refreshProfile();
-    setRolesMsg('Đã lưu!'); setSavingRoles(false);
-    setTimeout(() => setRolesMsg(''), 3000);
   };
 
   return (
@@ -127,33 +104,24 @@ export default function SettingsPage() {
       {/* Roles */}
       <div className="card p-6">
         <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2 mb-4">
-          <Shield className="w-5 h-5 text-gray-400" /> Quản lý Role
+          <Shield className="w-5 h-5 text-gray-400" /> Vai trò hiện tại
         </h2>
-        <p className="text-sm text-gray-500 mb-4">Chọn các role bạn muốn có (có thể switch trong sidebar)</p>
-        <div className="flex flex-wrap gap-3 mb-4">
-          {ALL_ROLES.map((role) => (
-            <button
+        <div className="flex flex-wrap gap-2">
+          {(profile?.roles ?? []).map((role) => (
+            <span
               key={role}
-              onClick={() => toggleRole(role)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium border-2 transition-all ${
-                selectedRoles.includes(role)
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-400'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                profile?.active_role === role
+                  ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                  : 'bg-gray-100 text-gray-500 border border-gray-200'
               }`}
             >
-              {ROLE_LABELS[role]}
-              {profile?.active_role === role && (
-                <span className="ml-2 text-xs opacity-75">(hiện tại)</span>
-              )}
-            </button>
+              {ROLE_LABELS[role as Role]}
+              {profile?.active_role === role && <span className="ml-1.5 text-xs opacity-75">(đang dùng)</span>}
+            </span>
           ))}
         </div>
-        <div className="flex items-center justify-between">
-          <button onClick={saveRoles} disabled={savingRoles} className="btn-primary flex items-center gap-2">
-            <Save className="w-4 h-4" /> {savingRoles ? 'Đang lưu...' : 'Lưu roles'}
-          </button>
-          {rolesMsg && <span className="text-sm text-green-600 font-medium">✓ {rolesMsg}</span>}
-        </div>
+        <p className="text-xs text-gray-400 mt-3">Chuyển vai trò bằng cách chọn trong menu sidebar.</p>
       </div>
     </div>
   );

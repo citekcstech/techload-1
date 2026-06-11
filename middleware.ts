@@ -27,16 +27,21 @@ export async function middleware(request: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession();
   const user = session?.user ?? null;
 
-  const isAuth = request.nextUrl.pathname.startsWith('/login') ||
+  const isPublic = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/register') ||
     request.nextUrl.pathname.startsWith('/forgot-password') ||
     request.nextUrl.pathname.startsWith('/reset-password');
 
-  if (!user && !isAuth) {
+  // /reset-password cần truy cập được kể cả khi đã có session (recovery token)
+  const isRedirectIfAuthed = request.nextUrl.pathname.startsWith('/login') ||
+    request.nextUrl.pathname.startsWith('/register') ||
+    request.nextUrl.pathname.startsWith('/forgot-password');
+
+  if (!user && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (user && isAuth) {
+  if (user && isRedirectIfAuthed) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 

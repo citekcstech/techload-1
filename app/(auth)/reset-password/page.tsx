@@ -12,9 +12,20 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
+  const [tokenError, setTokenError] = useState('');
 
   useEffect(() => {
-    // Supabase tự động exchange token từ URL hash khi có type=recovery
+    const params = new URLSearchParams(window.location.search);
+    const errCode = params.get('error_code');
+    if (errCode === 'otp_expired') {
+      setTokenError('Link đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu gửi lại.');
+      return;
+    }
+    if (params.get('error')) {
+      setTokenError('Link không hợp lệ. Vui lòng yêu cầu gửi lại.');
+      return;
+    }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setReady(true);
@@ -68,6 +79,13 @@ export default function ResetPasswordPage() {
             <div className="p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
               <p className="font-medium">Đổi mật khẩu thành công!</p>
               <p className="mt-1">Đang chuyển hướng về trang chủ...</p>
+            </div>
+          ) : tokenError ? (
+            <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              <p className="font-medium mb-2">{tokenError}</p>
+              <a href="/forgot-password" className="text-blue-600 font-medium hover:underline">
+                Gửi lại email đặt lại mật khẩu
+              </a>
             </div>
           ) : !ready ? (
             <div className="p-4 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-lg text-sm">

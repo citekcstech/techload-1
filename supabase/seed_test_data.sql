@@ -44,7 +44,7 @@ SET roles = ARRAY['technical','lead_technical'], active_role = 'lead_technical'
 WHERE id = 'aa000001-0000-0000-0000-000000000000';
 
 UPDATE profiles
-SET roles = ARRAY['consultant'], active_role = 'consultant'
+SET roles = ARRAY['technical'], active_role = 'technical'
 WHERE id IN (
   'aa000002-0000-0000-0000-000000000000',
   'aa000003-0000-0000-0000-000000000000',

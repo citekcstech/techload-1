@@ -111,6 +111,54 @@ Sau khi có URL Vercel (VD: `https://techload-abc123.vercel.app`):
 
 ---
 
+## Deploy Production bằng Terminal (Vercel CLI)
+
+### Yêu cầu
+```bash
+npm install -g vercel
+```
+
+### Lần đầu (setup + deploy)
+```bash
+# 1. Đăng nhập Vercel (mở browser để xác thực)
+vercel login
+
+# 2. Deploy production (sẽ hỏi setup lần đầu)
+vercel --prod
+```
+
+Trả lời các câu hỏi:
+| Câu hỏi | Trả lời |
+|---------|---------|
+| Which team? | Chọn team → Enter |
+| Found project "...". Link to it? | `Y` |
+| Pull environment variables? | `Y` |
+| Found existing .env.local. Overwrite? | `N` |
+
+Sau khi deploy xong, app live tại URL hiển thị trong output.
+
+### Từ lần 2 trở đi
+```bash
+# Commit code mới
+git add -A
+git commit -m "mô tả thay đổi"
+git push origin main
+
+# Hoặc deploy thẳng không cần push
+vercel --prod
+```
+
+> **Lưu ý:** Nếu repo đã kết nối GitHub trên Vercel Dashboard, mỗi lần `git push origin main` sẽ **tự động trigger deploy** mà không cần chạy `vercel --prod`.
+
+### Kiểm tra sau deploy
+1. Vào **Vercel Dashboard → Project → Settings → Environment Variables**
+2. Đảm bảo có đủ 2 biến:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+3. Nếu vừa thêm/sửa env vars → nhấn **Redeploy**
+
+---
+
 ## Development local
 
 ```bash

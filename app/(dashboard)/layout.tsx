@@ -24,7 +24,6 @@ const NAV = [
 ];
 
 const ROLE_COLORS: Record<Role, string> = {
-  consultant: 'bg-purple-100 text-purple-700',
   technical: 'bg-blue-100 text-blue-700',
   lead_technical: 'bg-orange-100 text-orange-700',
 };
@@ -90,17 +89,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Vai trò hiện tại</p>
           <div className="relative">
             <button
-              onClick={() => setShowRoleMenu(!showRoleMenu)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+              onClick={() => profile.roles.length > 1 && setShowRoleMenu(!showRoleMenu)}
+              className={`w-full flex items-center justify-between px-3 py-2 bg-gray-800 rounded-lg transition-colors ${profile.roles.length > 1 ? 'hover:bg-gray-700 cursor-pointer' : 'cursor-default'}`}
             >
               <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${activeRole ? ROLE_COLORS[activeRole] : ''}`}>
                 {activeRole ? ROLE_LABELS[activeRole] : '—'}
               </span>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              {profile.roles.length > 1 && <ChevronDown className="w-4 h-4 text-gray-400" />}
             </button>
-            {showRoleMenu && (
+            {showRoleMenu && profile.roles.length > 1 && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg border border-gray-700 py-1 z-10">
-                {profile.roles.map((role) => (
+                {profile.roles.filter((r): r is Role => r in ROLE_COLORS).map((role) => (
                   <button
                     key={role}
                     onClick={() => handleSwitchRole(role)}

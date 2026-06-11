@@ -1,4 +1,4 @@
-export type Role = 'consultant' | 'technical' | 'lead_technical';
+export type Role = 'technical' | 'lead_technical';
 export type ReopenRootCause = 'missing_requirement' | 'technical_bug' | 'scope_change' | 'external_dependency' | 'estimate_error' | 'other';
 export type TaskStatus = 'backlog' | 'pending' | 'in_progress' | 'blocked' | 'ready_for_review' | 'completed' | 'reopened' | 'cancelled';
 export type CommentType = 'note' | 'question' | 'decision' | 'blocker_update';
@@ -19,7 +19,6 @@ export const ROOT_CAUSE_LABELS: Record<ReopenRootCause, string> = {
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
-  consultant: 'Tư vấn nghiệp vụ',
   technical: 'Technical',
   lead_technical: 'Lead Technical',
 };

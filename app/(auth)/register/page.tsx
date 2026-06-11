@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Activity } from 'lucide-react';
 import { Role, ROLE_LABELS } from '@/types';
 
-const ALL_ROLES: Role[] = ['consultant', 'technical', 'lead_technical'];
+const ALL_ROLES: Role[] = ['technical', 'lead_technical'];
 
 export default function RegisterPage() {
   const router = useRouter();
