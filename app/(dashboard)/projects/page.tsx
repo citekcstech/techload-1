@@ -57,7 +57,7 @@ export default function ProjectsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [profile?.id]);
+  useEffect(() => { load(); }, [profile?.id, activeRole]);
 
   const openCreate = () => {
     setForm({ name: '', description: '', team_id: teams[0]?.id ?? '', status: 'active', start_date: '', end_date: '' });

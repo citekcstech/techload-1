@@ -7,7 +7,7 @@ import { EstimateParam, Team } from '@/types';
 import { Sliders, Plus, Pencil, Trash2, X, Clock } from 'lucide-react';
 
 export default function EstimateParamsPage() {
-  const { profile } = useAuth();
+  const { profile, activeRole } = useAuth();
   const supabase = createClient();
 
   const [params, setParams] = useState<EstimateParam[]>([]);
@@ -21,19 +21,15 @@ export default function EstimateParamsPage() {
   const load = async () => {
     if (!profile) return;
     setLoading(true);
-    const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
-    const teamIds = memberOf?.map((m) => m.team_id) ?? [];
-    if (teamIds.length > 0) {
-      const { data: teamsData } = await supabase.from('teams').select('*').in('id', teamIds);
-      setTeams(teamsData ?? []);
-      const { data: paramsData } = await supabase
-        .from('estimate_params').select('*, team:teams(name)').in('team_id', teamIds).order('name');
-      setParams(paramsData ?? []);
-    }
+    const { data: teamsData } = await supabase.from('teams').select('*');
+    setTeams(teamsData ?? []);
+    const { data: paramsData } = await supabase
+      .from('estimate_params').select('*, team:teams(name)').order('name');
+    setParams(paramsData ?? []);
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [profile?.id]);
+  useEffect(() => { load(); }, [profile?.id, activeRole]);
 
   const openCreate = () => {
     setForm({ name: '', description: '', estimated_hours: 4, team_id: teams[0]?.id ?? '' });

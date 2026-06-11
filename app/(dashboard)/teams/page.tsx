@@ -7,7 +7,7 @@ import { Team, TeamMember, Profile } from '@/types';
 import { Users, Plus, Trash2, UserPlus, X } from 'lucide-react';
 
 export default function TeamsPage() {
-  const { profile } = useAuth();
+  const { profile, activeRole } = useAuth();
   const supabase = createClient();
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -25,19 +25,21 @@ export default function TeamsPage() {
   const load = async () => {
     if (!profile) return;
     setLoading(true);
+    const isLead = activeRole === 'lead_technical';
 
-    const { data: memberOf } = await supabase
-      .from('team_members').select('team_id').eq('user_id', profile.id);
-    const teamIds = memberOf?.map((m) => m.team_id) ?? [];
+    let teamIds: string[] = [];
+    if (!isLead) {
+      const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
+      teamIds = memberOf?.map((m) => m.team_id) ?? [];
+    }
 
-    if (teamIds.length > 0) {
-      const { data: teamsData } = await supabase.from('teams').select('*').in('id', teamIds);
+    if (isLead || teamIds.length > 0) {
+      const teamsQuery = supabase.from('teams').select('*');
+      const { data: teamsData } = await (isLead ? teamsQuery : teamsQuery.in('id', teamIds));
       setTeams(teamsData ?? []);
 
-      const { data: membersData } = await supabase
-        .from('team_members')
-        .select('*, profile:profiles(id, full_name, email, roles, active_role)')
-        .in('team_id', teamIds);
+      const membersQuery = supabase.from('team_members').select('*, profile:profiles(id, full_name, email, roles, active_role)');
+      const { data: membersData } = await (isLead ? membersQuery : membersQuery.in('team_id', teamIds));
       setMembers(membersData as any ?? []);
     }
 
@@ -47,7 +49,7 @@ export default function TeamsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [profile?.id]);
+  useEffect(() => { load(); }, [profile?.id, activeRole]);
 
   const createTeam = async () => {
     if (!teamName.trim() || !profile) return;
