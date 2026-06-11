@@ -23,38 +23,28 @@ export default function DashboardPage() {
     const load = async () => {
       if (!profile) return;
       setLoading(true);
+      const isLead = activeRole === 'lead_technical';
 
-      // Load teams user belongs to
-      const { data: memberOf } = await supabase
-        .from('team_members')
-        .select('team_id')
-        .eq('user_id', profile.id);
-      const teamIds = memberOf?.map((m) => m.team_id) ?? [];
+      let teamIds: string[] = [];
+      if (!isLead) {
+        const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
+        teamIds = memberOf?.map((m) => m.team_id) ?? [];
+        if (teamIds.length === 0) { setLoading(false); return; }
+      }
 
-      if (teamIds.length === 0) { setLoading(false); return; }
-
-      const { data: teamsData } = await supabase
-        .from('teams')
-        .select('*')
-        .in('id', teamIds);
+      const teamsQuery = supabase.from('teams').select('*');
+      const { data: teamsData } = await (isLead ? teamsQuery : teamsQuery.in('id', teamIds));
       setTeams(teamsData ?? []);
       if (teamsData?.[0]) setSelectedTeamId(teamsData[0].id);
 
-      // Load all projects for these teams
-      const { data: projs } = await supabase
-        .from('projects')
-        .select('*, team:teams(name)')
-        .in('team_id', teamIds);
+      const projsQuery = supabase.from('projects').select('*, team:teams(name)');
+      const { data: projs } = await (isLead ? projsQuery : projsQuery.in('team_id', teamIds));
       setProjects(projs ?? []);
 
-      // Load team members with profiles
-      const { data: members } = await supabase
-        .from('team_members')
-        .select('*, profile:profiles(id, full_name, email, roles, active_role)')
-        .in('team_id', teamIds);
+      const membersQuery = supabase.from('team_members').select('*, profile:profiles(id, full_name, email, roles, active_role)');
+      const { data: members } = await (isLead ? membersQuery : membersQuery.in('team_id', teamIds));
       setTeamMembers(members ?? []);
 
-      // Load all tasks for these projects
       const projIds = (projs ?? []).map((p) => p.id);
       if (projIds.length > 0) {
         const { data: taskData } = await supabase
@@ -67,7 +57,7 @@ export default function DashboardPage() {
       setLoading(false);
     };
     load();
-  }, [profile?.id]);
+  }, [profile?.id, activeRole]);
 
   const filteredMembers = useMemo(
     () => teamMembers.filter((m) => !selectedTeamId || m.team_id === selectedTeamId),
@@ -171,7 +161,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <span className={`text-sm font-semibold ${overloadColor(ratio)}`}>
-                        {active}h / {avail}h
+                        {Math.round(active)}h / {Math.round(avail)}h
                       </span>
                       {m.hasOverdue && (
                         <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">

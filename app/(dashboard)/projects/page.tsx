@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Project, Team, ProjectStatus } from '@/types';
-import { FolderOpen, Plus, X, Calendar } from 'lucide-react';
+import { FolderOpen, Plus, X, Calendar, Users } from 'lucide-react';
 import { format } from 'date-fns';
 
 const STATUS_STYLES: Record<ProjectStatus, string> = {
@@ -19,7 +19,7 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 };
 
 export default function ProjectsPage() {
-  const { profile } = useAuth();
+  const { profile, activeRole } = useAuth();
   const supabase = createClient();
 
   const [projects, setProjects] = useState<(Project & { team: Team })[]>([]);
@@ -37,13 +37,21 @@ export default function ProjectsPage() {
   const load = async () => {
     if (!profile) return;
     setLoading(true);
-    const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
-    const teamIds = memberOf?.map((m) => m.team_id) ?? [];
-    if (teamIds.length > 0) {
-      const { data: teamsData } = await supabase.from('teams').select('*').in('id', teamIds);
+    const isLead = activeRole === 'lead_technical';
+
+    let teamIds: string[] = [];
+    if (!isLead) {
+      const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
+      teamIds = memberOf?.map((m) => m.team_id) ?? [];
+    }
+
+    if (isLead || teamIds.length > 0) {
+      const teamsQuery = supabase.from('teams').select('*');
+      const { data: teamsData } = await (isLead ? teamsQuery : teamsQuery.in('id', teamIds));
       setTeams(teamsData ?? []);
-      const { data: projs } = await supabase
-        .from('projects').select('*, team:teams(*)').in('team_id', teamIds).order('created_at', { ascending: false });
+
+      const projsQuery = supabase.from('projects').select('*, team:teams(*)').order('created_at', { ascending: false });
+      const { data: projs } = await (isLead ? projsQuery : projsQuery.in('team_id', teamIds));
       setProjects(projs as any ?? []);
     }
     setLoading(false);
@@ -154,6 +162,53 @@ export default function ProjectsPage() {
         <div className="card p-12 text-center">
           <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">Chưa có dự án nào</p>
+        </div>
+      ) : activeRole === 'lead_technical' ? (
+        <div className="space-y-8">
+          {teams.map((team) => {
+            const teamProjects = projects.filter((p) => p.team_id === team.id);
+            if (teamProjects.length === 0) return null;
+            return (
+              <div key={team.id}>
+                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-gray-200">
+                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Users className="w-4 h-4 text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base font-semibold text-gray-900">{team.name}</h2>
+                    {team.description && <p className="text-xs text-gray-500 truncate">{team.description}</p>}
+                  </div>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
+                    {teamProjects.length} dự án
+                  </span>
+                </div>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {teamProjects.map((p) => (
+                    <div key={p.id} className="card p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => openEdit(p)}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                          <FolderOpen className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[p.status]}`}>
+                          {STATUS_LABELS[p.status]}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-gray-900 mb-1">{p.name}</h3>
+                      {p.description && <p className="text-sm text-gray-600 mb-3 line-clamp-2">{p.description}</p>}
+                      {(p.start_date || p.end_date) && (
+                        <div className="flex items-center gap-1 text-xs text-gray-400">
+                          <Calendar className="w-3.5 h-3.5" />
+                          {p.start_date && format(new Date(p.start_date), 'dd/MM/yyyy')}
+                          {p.start_date && p.end_date && ' → '}
+                          {p.end_date && format(new Date(p.end_date), 'dd/MM/yyyy')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

@@ -21,14 +21,14 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
 };
 
 const STATUS_COLORS: Record<TaskStatus, string> = {
-  backlog:          'bg-purple-100 text-purple-700',
-  pending:          'bg-gray-100 text-gray-600',
-  in_progress:      'bg-blue-100 text-blue-700',
-  blocked:          'bg-red-100 text-red-700',
+  backlog: 'bg-purple-100 text-purple-700',
+  pending: 'bg-gray-100 text-gray-600',
+  in_progress: 'bg-blue-100 text-blue-700',
+  blocked: 'bg-red-100 text-red-700',
   ready_for_review: 'bg-yellow-100 text-yellow-800',
-  completed:        'bg-green-100 text-green-700',
-  reopened:         'bg-orange-100 text-orange-700',
-  cancelled:        'bg-gray-200 text-gray-500',
+  completed: 'bg-green-100 text-green-700',
+  reopened: 'bg-orange-100 text-orange-700',
+  cancelled: 'bg-gray-200 text-gray-500',
 };
 
 const STORAGE_DATE_TIME_FORMAT = "yyyy-MM-dd'T'HH:mm";
@@ -92,14 +92,15 @@ export default function TasksPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>({
     title: '', description: '', project_id: '', assignee_id: '',
-    priority: 'medium', severity: '', request_type: '', module: '',
-    source: '', requester: '', business_impact: '', acceptance_criteria: '',
+    priority: 'medium', severity: 'medium', request_type: 'consultation', module: '',
+    source: 'client', requester: '', business_impact: 'Trung bình', acceptance_criteria: '',
     estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
   });
   const [deadlineInput, setDeadlineInput] = useState(toDisplayDeadline(defaultDeadline));
   const [deadlineError, setDeadlineError] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [projectMembers, setProjectMembers] = useState<TeamMember[]>([]);
   const [suggestedDeadline, setSuggestedDeadline] = useState<string | null>(null);
   const [suggestedAssignees, setSuggestedAssignees] = useState<any[]>([]);
   const [capacityWarning, setCapacityWarning] = useState<CreateCapacityWarning | null>(null);
@@ -107,18 +108,24 @@ export default function TasksPage() {
   const load = async () => {
     if (!profile) return;
     setLoading(true);
-    const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
-    const teamIds = memberOf?.map((m) => m.team_id) ?? [];
-    if (teamIds.length === 0) { setLoading(false); return; }
+    const isLead = activeRole === 'lead_technical';
 
-    const { data: projs } = await supabase.from('projects').select('*, team:teams(name)').in('team_id', teamIds);
+    let teamIds: string[] = [];
+    if (!isLead) {
+      const { data: memberOf } = await supabase.from('team_members').select('team_id').eq('user_id', profile.id);
+      teamIds = memberOf?.map((m) => m.team_id) ?? [];
+      if (teamIds.length === 0) { setLoading(false); return; }
+    }
+
+    const projsQuery = supabase.from('projects').select('*, team:teams(name)');
+    const { data: projs } = await (isLead ? projsQuery : projsQuery.in('team_id', teamIds));
     setProjects(projs ?? []);
 
-    const { data: members } = await supabase
-      .from('team_members').select('*, profile:profiles(id, full_name, email, roles, active_role)').in('team_id', teamIds);
+    const membersQuery = supabase.from('team_members').select('*, profile:profiles(id, full_name, email, roles, active_role)');
+    const { data: members } = await (isLead ? membersQuery : membersQuery.in('team_id', teamIds));
     setTeamMembers(members ?? []);
 
-    const { data: params } = await supabase.from('estimate_params').select('*').in('team_id', teamIds);
+    const { data: params } = await supabase.from('estimate_params').select('*');
     setEstimateParams(params ?? []);
 
     const projIds = (projs ?? []).map((p) => p.id);
@@ -144,10 +151,7 @@ export default function TasksPage() {
     if (!form.assignee_id || !form.project_id || !form.estimated_hours) return null;
     const deadline = deadlineValue instanceof Date ? deadlineValue : new Date(deadlineValue);
     if (Number.isNaN(deadline.getTime())) return null;
-    const projectTeam = projects.find((p) => p.id === form.project_id)?.team_id;
-    if (!projectTeam) return null;
-    const projMembers = teamMembers.filter((m) => m.team_id === projectTeam);
-    const workload = buildWorkloadMembers(projMembers, tasks);
+    const workload = buildWorkloadMembers(projectMembers, tasks);
     const member = workload.find((m) => m.userId === form.assignee_id);
     if (!member) return null;
     const check = checkCapacityOnAdd(member, form.estimated_hours, deadline, form.priority);
@@ -169,15 +173,13 @@ export default function TasksPage() {
       setCapacityWarning(null);
       return;
     }
-    const projectTeam = projects.find((p) => p.id === form.project_id)?.team_id;
-    if (!projectTeam) {
+    if (projectMembers.length === 0) {
       setSuggestedAssignees([]);
       setSuggestedDeadline(null);
       setCapacityWarning(null);
       return;
     }
-    const projMembers = teamMembers.filter((m) => m.team_id === projectTeam);
-    const workload = buildWorkloadMembers(projMembers, tasks);
+    const workload = buildWorkloadMembers(projectMembers, tasks);
     const dl = new Date(form.deadline);
     const suggestions = suggestAssignees(workload, dl, form.estimated_hours, 3, form.priority);
     setSuggestedAssignees(suggestions);
@@ -195,7 +197,7 @@ export default function TasksPage() {
       setSuggestedDeadline(null);
       setCapacityWarning(null);
     }
-  }, [form.estimated_hours, form.deadline, form.project_id, form.assignee_id, form.priority, projects, teamMembers, tasks]);
+  }, [form.estimated_hours, form.deadline, form.project_id, form.assignee_id, form.priority, projectMembers, tasks]);
 
   const handleParamSelect = (paramId: string) => {
     const param = estimateParams.find((p) => p.id === paramId);
@@ -235,11 +237,30 @@ export default function TasksPage() {
     );
   };
 
+  const loadProjectMembers = async (projectId: string) => {
+    if (!projectId) { setProjectMembers([]); return; }
+    const project = projects.find((p) => p.id === projectId);
+    const teamId = project?.team_id ?? (
+      await supabase.from('projects').select('team_id').eq('id', projectId).single()
+        .then(({ data }) => data?.team_id)
+    );
+    if (!teamId) { setProjectMembers([]); return; }
+    const { data: members } = await supabase
+      .from('team_members')
+      .select('*, profile:profiles(id, full_name, email, roles, active_role)')
+      .eq('team_id', teamId);
+    setProjectMembers(members ?? []);
+    if (activeRole === 'technical' && profile?.id) {
+      setForm((f) => ({ ...f, assignee_id: profile.id }));
+    }
+  };
+
   const resetForm = () => {
+    setProjectMembers([]);
     setForm({
       title: '', description: '', project_id: '', assignee_id: '',
-      priority: 'medium', severity: '', request_type: '', module: '',
-      source: '', requester: '', business_impact: '', acceptance_criteria: '',
+      priority: 'medium', severity: 'medium', request_type: 'consultation', module: '',
+      source: 'client', requester: '', business_impact: 'Trung bình', acceptance_criteria: '',
       estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
     });
     setDeadlineInput(toDisplayDeadline(defaultDeadline));
@@ -344,7 +365,7 @@ export default function TasksPage() {
     [baseFiltered]
   );
 
-  const canCreate = activeRole === 'consultant' || activeRole === 'lead_technical';
+  const canCreate = activeRole === 'lead_technical' || activeRole === 'technical';
 
   const renderTaskCard = (task: Task) => {
     const isCompleted = task.status === 'completed';
@@ -466,9 +487,11 @@ export default function TasksPage() {
         {activeRole !== 'technical' && (
           <select className="input w-auto" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
             <option value="all">Tất cả thành viên</option>
-            {teamMembers.map((m) => (
-              <option key={m.user_id} value={m.user_id}>{(m as any).profile?.full_name}</option>
-            ))}
+            {teamMembers
+              .filter((m, i, arr) => arr.findIndex((x) => x.user_id === m.user_id) === i)
+              .map((m) => (
+                <option key={m.user_id} value={m.user_id}>{(m as any).profile?.full_name}</option>
+              ))}
           </select>
         )}
       </div>
@@ -551,7 +574,7 @@ export default function TasksPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h2 className="text-lg font-semibold">Tạo task mới</h2>
-              <button onClick={() => setShowForm(false)}><X className="w-5 h-5 text-gray-400" /></button>
+              <button onClick={() => { setShowForm(false); resetForm(); }}><X className="w-5 h-5 text-gray-400" /></button>
             </div>
             <div className="p-6 space-y-4">
               {capacityWarning && (
@@ -588,7 +611,10 @@ export default function TasksPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Dự án *</label>
-                <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
+                <select className="input" value={form.project_id} onChange={(e) => {
+                  setForm({ ...form, project_id: e.target.value, assignee_id: '' });
+                  loadProjectMembers(e.target.value);
+                }}>
                   <option value="">-- Chọn dự án --</option>
                   {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -613,8 +639,8 @@ export default function TasksPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Module / Phân hệ</label>
-                  <input className="input" value={form.module} onChange={(e) => setForm({ ...form, module: e.target.value })} placeholder="VD: Kế toán, Nhân sự..." />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tcode</label>
+                  <input className="input" value={form.module} onChange={(e) => setForm({ ...form, module: e.target.value })} placeholder="VD: Tcode dự án" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nguồn yêu cầu</label>
@@ -686,28 +712,28 @@ export default function TasksPage() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assign cho
-                  {suggestedAssignees.length > 0 && (
-                    <span className="text-blue-600 font-normal ml-2 text-xs">
-                      Gợi ý: {suggestedAssignees.slice(0, 2).map((a) => a.userName).join(', ')}
-                    </span>
-                  )}
-                </label>
-                <select className="input" value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
-                  <option value="">-- Chưa assign --</option>
-                  {teamMembers
-                    .filter((m) => !form.project_id || projects.find((p) => p.id === form.project_id)?.team_id === m.team_id)
-                    .map((m) => {
+              {activeRole === 'lead_technical' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assign cho
+                    {suggestedAssignees.length > 0 && (
+                      <span className="text-blue-600 font-normal ml-2 text-xs">
+                        Gợi ý: {suggestedAssignees.slice(0, 2).map((a) => a.userName).join(', ')}
+                      </span>
+                    )}
+                  </label>
+                  <select className="input" value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
+                    <option value="">-- Chưa assign --</option>
+                    {projectMembers.map((m) => {
                       const suggested = suggestedAssignees.find((s) => s.userId === m.user_id);
                       const label = suggested
                         ? `${(m as any).profile?.full_name} — HT dự kiến ${format(suggested.projectedCompletion, 'dd/MM/yyyy HH:mm')}${suggested.willMiss ? ' ⚠ trễ' : ' ✓'}`
                         : (m as any).profile?.full_name;
                       return <option key={m.user_id} value={m.user_id}>{label}</option>;
                     })}
-                </select>
-              </div>
+                  </select>
+                </div>
+              )}
 
               {/* Nội dung chi tiết */}
               <div>
@@ -733,7 +759,7 @@ export default function TasksPage() {
               </div>
             </div>
             <div className="flex gap-2 justify-end px-6 pb-6">
-              <button onClick={() => setShowForm(false)} className="btn-secondary">Hủy</button>
+              <button onClick={() => { setShowForm(false); resetForm(); }} className="btn-secondary">Hủy</button>
               <button
                 onClick={() => createTask(true)}
                 disabled={saving || !form.title.trim() || !form.project_id}
