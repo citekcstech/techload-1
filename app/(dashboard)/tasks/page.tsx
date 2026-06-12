@@ -334,7 +334,7 @@ export default function TasksPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            subject: form.title.trim(),
+            subject: `RE: ${form.title.trim()}`,
             receiveEmail: emails,
             taskLink,
             employeeName: assigneeMember.profile.full_name,

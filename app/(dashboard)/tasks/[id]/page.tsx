@@ -325,7 +325,7 @@ export default function TaskDetailPage() {
     setEmailError('');
     const taskLink = `${window.location.origin}/tasks/${task.id}`;
     const payload = {
-      subject: task.title,
+      subject: `RE: ${task.title}`,
       receiveEmail: Array.from(new Set([
         'citek.cs.tech@citek.vn',
         assignee.email as string,
