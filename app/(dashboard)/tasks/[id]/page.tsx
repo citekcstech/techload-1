@@ -326,11 +326,11 @@ export default function TaskDetailPage() {
     const taskLink = `${window.location.origin}/tasks/${task.id}`;
     const payload = {
       subject: task.title,
-      receiveEmail: [...new Set([
+      receiveEmail: Array.from(new Set([
         'citek.cs.tech@citek.vn',
         assignee.email as string,
         creator?.email as string,
-      ].filter((e): e is string => !!e))],
+      ].filter((e): e is string => !!e))),
       taskLink,
       employeeName: assignee.full_name ?? '',
     };
@@ -717,7 +717,7 @@ export default function TaskDetailPage() {
             </>
           )}
 
-          {(canManage || activeRole === 'consultant') && !!task.assignee_id && (
+          {!isTechnical && !!task.assignee_id && (
             <div className="flex flex-col gap-1">
               <button
                 onClick={doResendEmail}

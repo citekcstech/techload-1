@@ -325,11 +325,11 @@ export default function TasksPage() {
       const assigneeMember = projectMembers.find((m) => m.user_id === form.assignee_id);
       if (assigneeMember?.profile) {
         const taskLink = `${window.location.origin}/tasks/${inserted.id}`;
-        const emails = [...new Set([
+        const emails = Array.from(new Set([
           'citek.cs.tech@citek.vn',
           assigneeMember.profile.email,
           profile.email,
-        ].filter((e): e is string => !!e))];
+        ].filter((e): e is string => !!e)));
         fetch('/api/notify-task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
