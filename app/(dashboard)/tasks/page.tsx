@@ -528,7 +528,13 @@ export default function TasksPage() {
         </select>
         <select className="input w-auto" value={filterProject} onChange={(e) => setFilterProject(e.target.value)}>
           <option value="all">Tất cả dự án</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries()).map(([teamId, team]) => (
+            <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
+              {projects.filter((p) => ((p as any).team?.id ?? '') === teamId).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </optgroup>
+          ))}
         </select>
         {activeRole !== 'technical' && (
           <select className="input w-auto" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
@@ -662,7 +668,13 @@ export default function TasksPage() {
                   loadProjectMembers(e.target.value);
                 }}>
                   <option value="">-- Chọn dự án --</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries()).map(([teamId, team]) => (
+                    <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
+                      {projects.filter((p) => ((p as any).team?.id ?? '') === teamId).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
 

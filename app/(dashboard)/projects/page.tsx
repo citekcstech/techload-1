@@ -163,7 +163,7 @@ export default function ProjectsPage() {
           <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">Chưa có dự án nào</p>
         </div>
-      ) : activeRole === 'lead_technical' ? (
+      ) : (
         <div className="space-y-8">
           {teams.map((team) => {
             const teamProjects = projects.filter((p) => p.team_id === team.id);
@@ -209,32 +209,6 @@ export default function ProjectsPage() {
               </div>
             );
           })}
-        </div>
-      ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((p) => (
-            <div key={p.id} className="card p-5 hover:shadow-md transition-shadow cursor-pointer" onClick={() => openEdit(p)}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                  <FolderOpen className="w-5 h-5 text-blue-600" />
-                </div>
-                <span className={`text-xs font-medium px-2 py-1 rounded-full ${STATUS_STYLES[p.status]}`}>
-                  {STATUS_LABELS[p.status]}
-                </span>
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">{p.name}</h3>
-              <p className="text-xs text-gray-500 mb-3">{p.team?.name}</p>
-              {p.description && <p className="text-sm text-gray-600 mb-3 line-clamp-2">{p.description}</p>}
-              {(p.start_date || p.end_date) && (
-                <div className="flex items-center gap-1 text-xs text-gray-400">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {p.start_date && format(new Date(p.start_date), 'dd/MM/yyyy')}
-                  {p.start_date && p.end_date && ' → '}
-                  {p.end_date && format(new Date(p.end_date), 'dd/MM/yyyy')}
-                </div>
-              )}
-            </div>
-          ))}
         </div>
       )}
     </div>
