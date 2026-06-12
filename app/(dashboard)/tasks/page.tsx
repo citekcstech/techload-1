@@ -98,12 +98,16 @@ export default function TasksPage() {
   });
   const [deadlineInput, setDeadlineInput] = useState(toDisplayDeadline(defaultDeadline));
   const [deadlineError, setDeadlineError] = useState('');
+  const [tcodeError, setTcodeError] = useState('');
+  const [assigneeError, setAssigneeError] = useState('');
+  const [requesterError, setRequesterError] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [projectMembers, setProjectMembers] = useState<TeamMember[]>([]);
   const [suggestedDeadline, setSuggestedDeadline] = useState<string | null>(null);
   const [suggestedAssignees, setSuggestedAssignees] = useState<any[]>([]);
   const [capacityWarning, setCapacityWarning] = useState<CreateCapacityWarning | null>(null);
+  const [showExtraDetails, setShowExtraDetails] = useState(false);
 
   const load = async () => {
     if (!profile) return;
@@ -265,6 +269,9 @@ export default function TasksPage() {
     });
     setDeadlineInput(toDisplayDeadline(defaultDeadline));
     setDeadlineError('');
+    setTcodeError('');
+    setAssigneeError('');
+    setRequesterError('');
     setFormError('');
     setCapacityWarning(null);
   };
@@ -272,10 +279,29 @@ export default function TasksPage() {
   const createTask = async (asBacklog = false) => {
     if (!form.title.trim() || !form.project_id || !profile) return;
     setFormError('');
+    setTcodeError('');
+    setAssigneeError('');
+    setRequesterError('');
 
     const parsedDeadline = parseDisplayDeadline(deadlineInput);
     if (!parsedDeadline) {
       setDeadlineError('Nhập deadline theo định dạng dd/MM/yyyy HH:mm');
+      return;
+    }
+
+    if (!form.module.trim()) {
+      setTcodeError('Vui lòng nhập Tcode');
+      return;
+    }
+
+    if (!asBacklog && !form.assignee_id) {
+      setAssigneeError('Vui lòng chọn người được assign');
+      return;
+    }
+
+    const requesterTrimmed = form.requester.trim();
+    if (requesterTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterTrimmed)) {
+      setRequesterError('Email người yêu cầu không hợp lệ');
       return;
     }
 
@@ -328,7 +354,7 @@ export default function TasksPage() {
         const emails = Array.from(new Set([
           'citek.cs.tech@citek.vn',
           assigneeMember.profile.email,
-          profile.email,
+          form.requester.trim(),
         ].filter((e): e is string => !!e)));
         fetch('/api/notify-task', {
           method: 'POST',
@@ -659,8 +685,14 @@ export default function TasksPage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tcode</label>
-                  <input className="input" value={form.module} onChange={(e) => setForm({ ...form, module: e.target.value })} placeholder="VD: Tcode dự án" />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tcode <span className="text-red-500">*</span></label>
+                  <input
+                    className={`input${tcodeError ? ' border-red-500' : ''}`}
+                    value={form.module}
+                    onChange={(e) => { setTcodeError(''); setForm({ ...form, module: e.target.value }); }}
+                    placeholder="VD: Tcode dự án"
+                  />
+                  {tcodeError && <p className="mt-1 text-xs text-red-600">{tcodeError}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nguồn yêu cầu</label>
@@ -672,7 +704,14 @@ export default function TasksPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Người yêu cầu</label>
-                <input className="input" value={form.requester} onChange={(e) => setForm({ ...form, requester: e.target.value })} placeholder="Tên người hoặc bộ phận yêu cầu..." />
+                <input
+                  type="email"
+                  className={`input${requesterError ? ' border-red-500' : ''}`}
+                  value={form.requester}
+                  onChange={(e) => { setRequesterError(''); setForm({ ...form, requester: e.target.value }); }}
+                  placeholder="email@example.com"
+                />
+                {requesterError && <p className="mt-1 text-xs text-red-600">{requesterError}</p>}
               </div>
 
               {/* Estimate & deadline */}
@@ -735,14 +774,18 @@ export default function TasksPage() {
               {activeRole === 'lead_technical' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Assign cho
+                    Assign cho <span className="text-red-500">*</span>
                     {suggestedAssignees.length > 0 && (
                       <span className="text-blue-600 font-normal ml-2 text-xs">
                         Gợi ý: {suggestedAssignees.slice(0, 2).map((a) => a.userName).join(', ')}
                       </span>
                     )}
                   </label>
-                  <select className="input" value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
+                  <select
+                    className={`input${assigneeError ? ' border-red-500' : ''}`}
+                    value={form.assignee_id}
+                    onChange={(e) => { setAssigneeError(''); setForm({ ...form, assignee_id: e.target.value }); }}
+                  >
                     <option value="">-- Chưa assign --</option>
                     {projectMembers.map((m) => {
                       const suggested = suggestedAssignees.find((s) => s.userId === m.user_id);
@@ -752,6 +795,7 @@ export default function TasksPage() {
                       return <option key={m.user_id} value={m.user_id}>{label}</option>;
                     })}
                   </select>
+                  {assigneeError && <p className="mt-1 text-xs text-red-600">{assigneeError}</p>}
                 </div>
               )}
 
@@ -759,24 +803,36 @@ export default function TasksPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Acceptance Criteria *
-                  <span className="font-normal text-gray-500 ml-1 text-xs">(bắt buộc để tạo task, bỏ trống để lưu backlog)</span>
+                  <span className="font-normal text-gray-500 ml-1 text-xs">(bỏ trống để lưu backlog)</span>
                 </label>
                 <textarea
                   className={`input resize-none ${formError && !form.acceptance_criteria.trim() ? 'border-yellow-400' : ''}`}
-                  rows={3}
+                  rows={2}
                   value={form.acceptance_criteria}
                   onChange={(e) => { setForm({ ...form, acceptance_criteria: e.target.value }); if (formError) setFormError(''); }}
                   placeholder="Điều kiện để task được coi là hoàn thành..."
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ảnh hưởng nghiệp vụ</label>
-                <textarea className="input resize-none" rows={2} value={form.business_impact} onChange={(e) => setForm({ ...form, business_impact: e.target.value })} placeholder="Nghiệp vụ nào bị ảnh hưởng nếu không làm / làm sai..." />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chi tiết</label>
-                <textarea className="input resize-none" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Chi tiết kỹ thuật, context bổ sung..." />
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowExtraDetails((v) => !v)}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showExtraDetails ? 'rotate-90' : ''}`} />
+                {showExtraDetails ? 'Ẩn' : 'Thêm'} mô tả & ảnh hưởng nghiệp vụ
+              </button>
+              {showExtraDetails && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ảnh hưởng nghiệp vụ</label>
+                    <textarea className="input resize-none" rows={2} value={form.business_impact} onChange={(e) => setForm({ ...form, business_impact: e.target.value })} placeholder="Nghiệp vụ nào bị ảnh hưởng nếu không làm / làm sai..." />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả chi tiết</label>
+                    <textarea className="input resize-none" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Chi tiết kỹ thuật, context bổ sung..." />
+                  </div>
+                </>
+              )}
             </div>
             <div className="flex gap-2 justify-end px-6 pb-6">
               <button onClick={() => { setShowForm(false); resetForm(); }} className="btn-secondary">Hủy</button>

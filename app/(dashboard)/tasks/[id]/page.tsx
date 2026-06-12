@@ -329,7 +329,7 @@ export default function TaskDetailPage() {
       receiveEmail: Array.from(new Set([
         'citek.cs.tech@citek.vn',
         assignee.email as string,
-        creator?.email as string,
+        task.requester ?? '',
       ].filter((e): e is string => !!e))),
       taskLink,
       employeeName: assignee.full_name ?? '',
@@ -430,6 +430,110 @@ export default function TaskDetailPage() {
       </div>
 
       {activeTab === 'details' && (<>
+
+        {/* Action buttons */}
+        <div className="card p-4 flex flex-wrap gap-3">
+          {isTechnical && isAssignee && (
+            <>
+              {(task.status === 'pending' || task.status === 'reopened') && (
+                <button onClick={() => updateStatus('in_progress')} disabled={saving} className="btn-primary flex items-center gap-2">
+                  <PlayCircle className="w-4 h-4" /> Bắt đầu xử lý
+                </button>
+              )}
+              {task.status === 'in_progress' && (
+                <>
+                  <button onClick={() => setShowComplete(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+                    <CheckCircle className="w-4 h-4" /> Hoàn thành
+                  </button>
+                  <button onClick={() => updateStatus('ready_for_review')} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition-colors">
+                    <Eye className="w-4 h-4" /> Gửi review
+                  </button>
+                  <button onClick={() => setShowBlock(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors">
+                    <PauseCircle className="w-4 h-4" /> Báo blocked
+                  </button>
+                  <button onClick={() => setShowWorkLog(true)} className="btn-secondary flex items-center gap-2">
+                    <Plus className="w-4 h-4" /> Ghi giờ
+                  </button>
+                  <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4" /> Re-estimate
+                  </button>
+                </>
+              )}
+              {task.status === 'blocked' && (
+                <button onClick={() => updateStatus('in_progress')} disabled={saving} className="btn-primary flex items-center gap-2">
+                  <PlayCircle className="w-4 h-4" /> Tiếp tục xử lý
+                </button>
+              )}
+              {task.status === 'completed' && (
+                <button onClick={() => setShowReopen(true)} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
+                  <RefreshCw className="w-4 h-4" /> Re-open
+                </button>
+              )}
+            </>
+          )}
+
+          {canManage && (
+            <>
+              {task.status === 'backlog' && (
+                <button onClick={() => updateStatus('pending')} disabled={saving} className="btn-primary flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4" /> Triage → Chờ xử lý
+                </button>
+              )}
+              {task.status === 'ready_for_review' && (
+                <>
+                  <button onClick={() => setShowComplete(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+                    <CheckCircle className="w-4 h-4" /> Xác nhận hoàn thành
+                  </button>
+                  <button onClick={() => setShowReopen(true)} disabled={saving} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
+                    <RefreshCw className="w-4 h-4" /> Yêu cầu làm lại
+                  </button>
+                </>
+              )}
+              {task.status === 'completed' && (
+                <button onClick={() => setShowReopen(true)} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
+                  <RefreshCw className="w-4 h-4" /> Re-open
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={() => setShowAssign(true)} className="btn-secondary flex items-center gap-2">
+                  <User className="w-4 h-4" /> {task.assignee_id ? 'Đổi assignee' : 'Assign'}
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
+                  <Clock className="w-4 h-4" /> Chỉnh estimate
+                </button>
+              )}
+              {!isTerminal && (activeRole === 'lead_technical' || !isStarted) && (
+                <button onClick={() => setShowCancel(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 hover:bg-red-50 rounded-lg font-medium transition-colors text-sm">
+                  <Ban className="w-4 h-4" /> Hủy task
+                </button>
+              )}
+            </>
+          )}
+
+          {!isTechnical && !!task.assignee_id && (
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={doResendEmail}
+                disabled={sendingEmail}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 ${
+                  emailSent
+                    ? 'bg-green-100 text-green-700 border border-green-200'
+                    : emailError
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'btn-secondary'
+                }`}
+              >
+                <Mail className="w-4 h-4" />
+                {sendingEmail ? 'Đang gửi...' : emailSent ? 'Đã gửi!' : 'Gửi lại email'}
+              </button>
+              {emailError && (
+                <p className="text-xs text-red-600 max-w-xs">{emailError}</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Main info */}
         <div className="card p-6 space-y-4">
@@ -634,110 +738,6 @@ export default function TaskDetailPage() {
             Tạo bởi {(task.creator as any)?.full_name} • {format(new Date(task.created_at), 'dd/MM/yyyy HH:mm')}
             {task.completed_at && ` • Hoàn thành: ${format(new Date(task.completed_at), 'dd/MM/yyyy HH:mm')}`}
           </div>
-        </div>
-
-        {/* Action buttons */}
-        <div className="card p-4 flex flex-wrap gap-3">
-          {isTechnical && isAssignee && (
-            <>
-              {(task.status === 'pending' || task.status === 'reopened') && (
-                <button onClick={() => updateStatus('in_progress')} disabled={saving} className="btn-primary flex items-center gap-2">
-                  <PlayCircle className="w-4 h-4" /> Bắt đầu xử lý
-                </button>
-              )}
-              {task.status === 'in_progress' && (
-                <>
-                  <button onClick={() => setShowComplete(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
-                    <CheckCircle className="w-4 h-4" /> Hoàn thành
-                  </button>
-                  <button onClick={() => updateStatus('ready_for_review')} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition-colors">
-                    <Eye className="w-4 h-4" /> Gửi review
-                  </button>
-                  <button onClick={() => setShowBlock(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-medium transition-colors">
-                    <PauseCircle className="w-4 h-4" /> Báo blocked
-                  </button>
-                  <button onClick={() => setShowWorkLog(true)} className="btn-secondary flex items-center gap-2">
-                    <Plus className="w-4 h-4" /> Ghi giờ
-                  </button>
-                  <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4" /> Re-estimate
-                  </button>
-                </>
-              )}
-              {task.status === 'blocked' && (
-                <button onClick={() => updateStatus('in_progress')} disabled={saving} className="btn-primary flex items-center gap-2">
-                  <PlayCircle className="w-4 h-4" /> Tiếp tục xử lý
-                </button>
-              )}
-              {task.status === 'completed' && (
-                <button onClick={() => setShowReopen(true)} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
-                  <RefreshCw className="w-4 h-4" /> Re-open
-                </button>
-              )}
-            </>
-          )}
-
-          {canManage && (
-            <>
-              {task.status === 'backlog' && (
-                <button onClick={() => updateStatus('pending')} disabled={saving} className="btn-primary flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4" /> Triage → Chờ xử lý
-                </button>
-              )}
-              {task.status === 'ready_for_review' && (
-                <>
-                  <button onClick={() => setShowComplete(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
-                    <CheckCircle className="w-4 h-4" /> Xác nhận hoàn thành
-                  </button>
-                  <button onClick={() => setShowReopen(true)} disabled={saving} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
-                    <RefreshCw className="w-4 h-4" /> Yêu cầu làm lại
-                  </button>
-                </>
-              )}
-              {task.status === 'completed' && (
-                <button onClick={() => setShowReopen(true)} className="btn-secondary flex items-center gap-2 text-orange-600 border-orange-300 hover:bg-orange-50">
-                  <RefreshCw className="w-4 h-4" /> Re-open
-                </button>
-              )}
-              {canEdit && (
-                <button onClick={() => setShowAssign(true)} className="btn-secondary flex items-center gap-2">
-                  <User className="w-4 h-4" /> {task.assignee_id ? 'Đổi assignee' : 'Assign'}
-                </button>
-              )}
-              {canEdit && (
-                <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
-                  <Clock className="w-4 h-4" /> Chỉnh estimate
-                </button>
-              )}
-              {!isTerminal && (activeRole === 'lead_technical' || !isStarted) && (
-                <button onClick={() => setShowCancel(true)} disabled={saving} className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 hover:bg-red-50 rounded-lg font-medium transition-colors text-sm">
-                  <Ban className="w-4 h-4" /> Hủy task
-                </button>
-              )}
-            </>
-          )}
-
-          {!isTechnical && !!task.assignee_id && (
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={doResendEmail}
-                disabled={sendingEmail}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 ${
-                  emailSent
-                    ? 'bg-green-100 text-green-700 border border-green-200'
-                    : emailError
-                    ? 'bg-red-100 text-red-700 border border-red-200'
-                    : 'btn-secondary'
-                }`}
-              >
-                <Mail className="w-4 h-4" />
-                {sendingEmail ? 'Đang gửi...' : emailSent ? 'Đã gửi!' : 'Gửi lại email'}
-              </button>
-              {emailError && (
-                <p className="text-xs text-red-600 max-w-xs">{emailError}</p>
-              )}
-            </div>
-          )}
         </div>
 
       </>)}
