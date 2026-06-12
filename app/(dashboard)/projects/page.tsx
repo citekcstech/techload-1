@@ -165,8 +165,8 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {teams.map((team) => {
-            const teamProjects = projects.filter((p) => p.team_id === team.id);
+          {[...teams].sort((a, b) => a.name.localeCompare(b.name, 'vi')).map((team) => {
+            const teamProjects = [...projects.filter((p) => p.team_id === team.id)].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
             if (teamProjects.length === 0) return null;
             return (
               <div key={team.id}>

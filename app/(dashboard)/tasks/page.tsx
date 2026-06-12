@@ -121,7 +121,7 @@ export default function TasksPage() {
       if (teamIds.length === 0) { setLoading(false); return; }
     }
 
-    const projsQuery = supabase.from('projects').select('*, team:teams(name)');
+    const projsQuery = supabase.from('projects').select('*, team:teams(id, name)');
     const { data: projs } = await (isLead ? projsQuery : projsQuery.in('team_id', teamIds));
     setProjects(projs ?? []);
 
@@ -528,13 +528,18 @@ export default function TasksPage() {
         </select>
         <select className="input w-auto" value={filterProject} onChange={(e) => setFilterProject(e.target.value)}>
           <option value="all">Tất cả dự án</option>
-          {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries()).map(([teamId, team]) => (
-            <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
-              {projects.filter((p) => ((p as any).team?.id ?? '') === teamId).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </optgroup>
-          ))}
+          {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries())
+            .sort(([, a], [, b]) => (a?.name ?? '').localeCompare(b?.name ?? '', 'vi'))
+            .map(([teamId, team]) => (
+              <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
+                {projects
+                  .filter((p) => ((p as any).team?.id ?? '') === teamId)
+                  .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+              </optgroup>
+            ))}
         </select>
         {activeRole !== 'technical' && (
           <select className="input w-auto" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
@@ -668,13 +673,18 @@ export default function TasksPage() {
                   loadProjectMembers(e.target.value);
                 }}>
                   <option value="">-- Chọn dự án --</option>
-                  {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries()).map(([teamId, team]) => (
-                    <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
-                      {projects.filter((p) => ((p as any).team?.id ?? '') === teamId).map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </optgroup>
-                  ))}
+                  {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries())
+                    .sort(([, a], [, b]) => (a?.name ?? '').localeCompare(b?.name ?? '', 'vi'))
+                    .map(([teamId, team]) => (
+                      <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
+                        {projects
+                          .filter((p) => ((p as any).team?.id ?? '') === teamId)
+                          .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                      </optgroup>
+                    ))}
                 </select>
               </div>
 
