@@ -321,6 +321,26 @@ export default function TasksPage() {
 
     if (!error && inserted && form.assignee_id && !asBacklog) {
       await persistSchedule(form.assignee_id, [...tasks, inserted as Task]);
+
+      const assigneeMember = projectMembers.find((m) => m.user_id === form.assignee_id);
+      if (assigneeMember?.profile) {
+        const taskLink = `${window.location.origin}/tasks/${inserted.id}`;
+        const emails = [...new Set([
+          'citek.cs.tech@citek.vn',
+          assigneeMember.profile.email,
+          profile.email,
+        ].filter((e): e is string => !!e))];
+        fetch('/api/notify-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: form.title.trim(),
+            receiveEmail: emails,
+            taskLink,
+            employeeName: assigneeMember.profile.full_name,
+          }),
+        }).catch((err) => console.error('[notify-task] create task error:', err));
+      }
     }
     setShowForm(false);
     setSaving(false);

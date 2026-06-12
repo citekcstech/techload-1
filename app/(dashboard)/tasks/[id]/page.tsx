@@ -13,7 +13,7 @@ import { format } from 'date-fns';
 import {
   ArrowLeft, Clock, Calendar, User, RefreshCw, CheckCircle, PlayCircle,
   AlertTriangle, X, Tag, Layers, PauseCircle, Eye, Ban, Plus, History,
-  ListChecks, MessageSquare,
+  ListChecks, MessageSquare, Mail,
 } from 'lucide-react';
 import Link from 'next/link';
 import SubtaskPanel from './SubtaskPanel';
@@ -79,6 +79,11 @@ export default function TaskDetailPage() {
   // Cancel modal
   const [showCancel, setShowCancel] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+
+  // Resend email
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   // Tab navigation
   const [activeTab, setActiveTab] = useState<'details' | 'subtasks' | 'comments' | 'history'>('details');
@@ -309,6 +314,47 @@ export default function TaskDetailPage() {
     await supabase.from('tasks').update({ priority }).eq('id', id);
     setSaving(false);
     load();
+  };
+
+  const doResendEmail = async () => {
+    if (!task || !task.assignee_id) return;
+    const assignee = (task.assignee as any);
+    const creator = (task.creator as any);
+    if (!assignee?.email) return;
+    setSendingEmail(true);
+    setEmailError('');
+    const taskLink = `${window.location.origin}/tasks/${task.id}`;
+    const payload = {
+      subject: task.title,
+      receiveEmail: [...new Set([
+        'citek.cs.tech@citek.vn',
+        assignee.email as string,
+        creator?.email as string,
+      ].filter((e): e is string => !!e))],
+      taskLink,
+      employeeName: assignee.full_name ?? '',
+    };
+    console.log('[ResendEmail] payload:', payload);
+    try {
+      const res = await fetch('/api/notify-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const text = await res.text();
+      console.log('[ResendEmail] status:', res.status, 'body:', text);
+      if (!res.ok) {
+        setEmailError(`Lỗi ${res.status}: ${text || 'Không có phản hồi'}`);
+      } else {
+        setEmailSent(true);
+        setTimeout(() => setEmailSent(false), 3000);
+      }
+    } catch (err) {
+      console.error('[ResendEmail] network error:', err);
+      setEmailError(err instanceof Error ? err.message : 'Lỗi kết nối');
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   if (loadError) {
@@ -669,6 +715,28 @@ export default function TaskDetailPage() {
                 </button>
               )}
             </>
+          )}
+
+          {(canManage || activeRole === 'consultant') && !!task.assignee_id && (
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={doResendEmail}
+                disabled={sendingEmail}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 ${
+                  emailSent
+                    ? 'bg-green-100 text-green-700 border border-green-200'
+                    : emailError
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'btn-secondary'
+                }`}
+              >
+                <Mail className="w-4 h-4" />
+                {sendingEmail ? 'Đang gửi...' : emailSent ? 'Đã gửi!' : 'Gửi lại email'}
+              </button>
+              {emailError && (
+                <p className="text-xs text-red-600 max-w-xs">{emailError}</p>
+              )}
+            </div>
           )}
         </div>
 
