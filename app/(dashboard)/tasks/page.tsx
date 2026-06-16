@@ -173,7 +173,7 @@ export default function TasksPage() {
   const load = async () => {
     if (!profile) return;
     setLoading(true);
-    const isLead = activeRole === 'lead_technical';
+    const isLead = activeRole === 'lead_technical' || activeRole === 'consulting';
 
     let teamIds: string[] = [];
     if (!isLead) {
@@ -435,7 +435,7 @@ export default function TasksPage() {
           form.requester.trim(),
         ].filter((e): e is string => !!e)));
 
-        const deadlineStr = format(new Date(scheduled?.projected_completion ?? parsedDeadline), 'dd/MM/yyyy HH:mm');
+        const deadlineStr = format(new Date(parsedDeadline), 'dd/MM/yyyy HH:mm');
         const vars: Record<string, string> = {
           '{{employeeName}}': assigneeMember.profile.full_name,
           '{{taskTitle}}': form.title.trim(),
@@ -713,8 +713,8 @@ export default function TasksPage() {
         </div>
       )}
 
-      {/* Sort bar — chỉ hiện với lead_technical */}
-      {activeRole === 'lead_technical' && activeList.length > 0 && (
+      {/* Sort bar — chỉ hiện với lead_technical và consulting */}
+      {(activeRole === 'lead_technical' || activeRole === 'consulting') && activeList.length > 0 && (
         <div className="flex items-center gap-1 flex-wrap">
           <span className="text-xs text-gray-400 mr-1">Sắp xếp:</span>
           {([

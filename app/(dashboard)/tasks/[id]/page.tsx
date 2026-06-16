@@ -344,7 +344,7 @@ export default function TaskDetailPage() {
     const vars: Record<string, string> = {
       '{{employeeName}}': assignee.full_name ?? '',
       '{{taskTitle}}': task.title,
-      '{{deadlineStr}}': format(new Date(task.projected_completion ?? task.deadline), 'dd/MM/yyyy HH:mm'),
+      '{{deadlineStr}}': format(new Date(task.deadline), 'dd/MM/yyyy HH:mm'),
       '{{hours}}': String(task.estimated_hours),
       '{{priority}}': PRIORITY_LABELS[task.priority],
       '{{taskLink}}': taskLink,

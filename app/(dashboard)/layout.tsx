@@ -27,6 +27,7 @@ const NAV = [
 const ROLE_COLORS: Record<Role, string> = {
   technical: 'bg-blue-100 text-blue-700',
   lead_technical: 'bg-orange-100 text-orange-700',
+  consulting: 'bg-green-100 text-green-700',
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
