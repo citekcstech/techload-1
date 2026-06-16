@@ -9,18 +9,19 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Activity, LayoutDashboard, Users, FolderOpen,
   CheckSquare, Sliders, Settings, LogOut, ChevronDown,
-  Menu, X, BarChart2, Bell,
+  Menu, X, BarChart2, Bell, Mail,
 } from 'lucide-react';
 
 const NAV = [
-  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
-  { href: '/teams', label: 'Teams & Members', icon: Users },
-  { href: '/projects', label: 'Dự án', icon: FolderOpen },
-  { href: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart2 },
-  { href: '/notifications', label: 'Thông báo', icon: Bell },
-  { href: '/estimate-params', label: 'Estimate Params', icon: Sliders },
-  { href: '/settings', label: 'Cài đặt', icon: Settings },
+  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, leadOnly: false },
+  { href: '/teams', label: 'Teams & Members', icon: Users, leadOnly: false },
+  { href: '/projects', label: 'Dự án', icon: FolderOpen, leadOnly: false },
+  { href: '/tasks', label: 'Tasks', icon: CheckSquare, leadOnly: false },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart2, leadOnly: false },
+  { href: '/notifications', label: 'Thông báo', icon: Bell, leadOnly: false },
+  { href: '/estimate-params', label: 'Estimate Params', icon: Sliders, leadOnly: false },
+  { href: '/email-template', label: 'Mẫu email', icon: Mail, leadOnly: true },
+  { href: '/settings', label: 'Cài đặt', icon: Settings, leadOnly: false },
 ];
 
 const ROLE_COLORS: Record<Role, string> = {
@@ -117,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {NAV.filter(({ leadOnly }) => !leadOnly || activeRole === 'lead_technical').map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link

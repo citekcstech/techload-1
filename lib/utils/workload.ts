@@ -296,6 +296,11 @@ export function computeSchedule(
   return result;
 }
 
+/** Advance `from` by `hours` productive working hours, respecting the 8:30–17:30 schedule and lunch break. */
+export function addWorkingHours(from: Date, hours: number): Date {
+  return advanceCursor(nextWorkCursor(from), hours);
+}
+
 export function scheduleMapForAssignee(
   tasks: Task[],
   dailyHours: number

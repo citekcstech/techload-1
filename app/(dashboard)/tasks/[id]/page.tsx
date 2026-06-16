@@ -8,7 +8,8 @@ import {
   Task, TaskStatus, TaskPriority, TeamMember, ReopenRootCause,
   PRIORITY_LABELS, PRIORITY_ORDER, STATUS_LABELS, SEVERITY_LABELS, REQUEST_TYPE_LABELS, SOURCE_LABELS, ROOT_CAUSE_LABELS,
 } from '@/types';
-import { scheduleMapForAssignee, buildWorkloadMembers, checkCapacityOnAdd } from '@/lib/utils/workload';
+import { scheduleMapForAssignee, buildWorkloadMembers, checkCapacityOnAdd, addWorkingHours } from '@/lib/utils/workload';
+import { BUFFER_FACTOR } from '@/types';
 import { format } from 'date-fns';
 import {
   ArrowLeft, Clock, Calendar, User, RefreshCw, CheckCircle, PlayCircle,
@@ -46,6 +47,7 @@ export default function TaskDetailPage() {
   const [showReestimate, setShowReestimate] = useState(false);
   const [newHours, setNewHours] = useState(0);
   const [newDeadline, setNewDeadline] = useState('');
+  const [reestDeadlineEdited, setReestDeadlineEdited] = useState(false);
   const [reestimateReason, setReestimateReason] = useState('');
   const [reestimateScopeChange, setReestimateScopeChange] = useState(false);
 
@@ -220,6 +222,16 @@ export default function TaskDetailPage() {
     load();
   };
 
+  // Tự tính lại deadline trong giờ làm việc khi đổi số giờ (trừ khi sửa tay)
+  const computeReestDeadline = (hours: number) =>
+    format(addWorkingHours(new Date(), hours), "yyyy-MM-dd'T'HH:mm");
+
+  useEffect(() => {
+    if (!showReestimate || reestDeadlineEdited) return;
+    setNewDeadline(computeReestDeadline(newHours));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newHours, showReestimate]);
+
   const saveReestimate = async () => {
     if (!profile || !reestimateReason.trim()) return;
     setSaving(true);
@@ -229,13 +241,13 @@ export default function TaskDetailPage() {
       old_estimated_hours: task?.estimated_hours,
       new_estimated_hours: newHours,
       old_deadline: task?.deadline,
-      new_deadline: newDeadline,
+      new_deadline: addWorkingHours(new Date(newDeadline), newHours * (BUFFER_FACTOR - 1)).toISOString(),
       reason: reestimateReason.trim(),
       is_scope_change: reestimateScopeChange,
     });
     await supabase.from('tasks').update({
       estimated_hours: newHours,
-      deadline: newDeadline,
+      deadline: addWorkingHours(new Date(newDeadline), newHours * (BUFFER_FACTOR - 1)).toISOString(),
     }).eq('id', id);
     await persistScheduleFor(task?.assignee_id);
     setShowReestimate(false);
@@ -319,30 +331,55 @@ export default function TaskDetailPage() {
   const doResendEmail = async () => {
     if (!task || !task.assignee_id) return;
     const assignee = (task.assignee as any);
-    const creator = (task.creator as any);
     if (!assignee?.email) return;
     setSendingEmail(true);
     setEmailError('');
     const taskLink = `${window.location.origin}/tasks/${task.id}`;
-    const payload = {
-      subject: `RE: ${task.title}`,
-      receiveEmail: Array.from(new Set([
-        'citek.cs.tech@citek.vn',
-        assignee.email as string,
-        task.requester ?? '',
-      ].filter((e): e is string => !!e))),
-      taskLink,
-      employeeName: assignee.full_name ?? '',
+    const receiveEmail = Array.from(new Set([
+      'citek.cs.tech@citek.vn',
+      assignee.email as string,
+      task.requester ?? '',
+    ].filter((e): e is string => !!e)));
+
+    const vars: Record<string, string> = {
+      '{{employeeName}}': assignee.full_name ?? '',
+      '{{taskTitle}}': task.title,
+      '{{deadlineStr}}': format(new Date(task.projected_completion ?? task.deadline), 'dd/MM/yyyy HH:mm'),
+      '{{hours}}': String(task.estimated_hours),
+      '{{priority}}': PRIORITY_LABELS[task.priority],
+      '{{taskLink}}': taskLink,
     };
-    console.log('[ResendEmail] payload:', payload);
+    const applyVars = (s: string) => Object.entries(vars).reduce((acc, [k, v]) => acc.replaceAll(k, v), s);
+
+    const { data: tpl, error: tplError } = await supabase
+      .from('email_templates').select('subject, html_body').eq('name', 'default').single();
+    console.log('[ResendEmail] tpl:', tpl, 'error:', tplError);
+
+    const fallbackHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:Arial,sans-serif;font-size:14px;color:#333}.greeting{color:#005870;font-weight:bold;font-size:16px}.link a{color:#005870;text-decoration:underline}.signature{margin-top:30px}.citek{color:#005870;font-weight:bold;font-size:22px;margin:4px 0}.task-info{background:#f0f9fb;border-left:4px solid #005870;padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0}.task-info p{margin:4px 0;font-size:13px;color:#333}.task-title{font-weight:bold;font-size:15px;color:#005870}</style>
+</head><body>
+<p class="greeting">Dear {{employeeName}},</p>
+<p>Bạn được assign một task mới. Vui lòng nhấn vào link bên dưới để xem chi tiết.</p>
+<div class="task-info"><p class="task-title">{{taskTitle}}</p><p>Deadline: <strong>{{deadlineStr}}</strong></p><p>Số giờ ước tính: <strong>{{hours}}h</strong></p><p>Ưu tiên: <strong>{{priority}}</strong></p></div>
+<p class="link"><a href="{{taskLink}}" target="_blank">{{taskLink}}</a></p>
+<div class="signature"><p>Thanks &amp; Best Regards,</p><p class="citek">Citek</p><p style="font-size:12px;color:#666">Address: No. 75, Str. 41, Van Phuc City, Hiep Binh Phuoc Ward, Thu Duc City, Ho Chi Minh City, Vietnam<br>Website: <a href="https://www.citek.vn">www.citek.vn</a></p></div>
+</body></html>`;
+
+    const htmlBody = applyVars(tpl?.html_body || fallbackHtml);
+    const subject = applyVars(tpl?.subject || `RE: ${task.title}`);
+    console.log('[ResendEmail] htmlBody length:', htmlBody.length, 'subject:', subject);
+
+    const bytes = new TextEncoder().encode(htmlBody);
+    const contentHtmlBase64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
+    console.log('[ResendEmail] contentHtmlBase64 length:', contentHtmlBase64.length);
+
     try {
       const res = await fetch('/api/notify-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ subject, receive_email: receiveEmail, task_link: taskLink, employee_name: assignee.full_name ?? '', contentHtmlBase64 }),
       });
       const text = await res.text();
-      console.log('[ResendEmail] status:', res.status, 'body:', text);
       if (!res.ok) {
         setEmailError(`Lỗi ${res.status}: ${text || 'Không có phản hồi'}`);
       } else {
@@ -350,7 +387,6 @@ export default function TaskDetailPage() {
         setTimeout(() => setEmailSent(false), 3000);
       }
     } catch (err) {
-      console.error('[ResendEmail] network error:', err);
       setEmailError(err instanceof Error ? err.message : 'Lỗi kết nối');
     } finally {
       setSendingEmail(false);
@@ -454,7 +490,7 @@ export default function TaskDetailPage() {
                   <button onClick={() => setShowWorkLog(true)} className="btn-secondary flex items-center gap-2">
                     <Plus className="w-4 h-4" /> Ghi giờ
                   </button>
-                  <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
+                  <button onClick={() => { setReestDeadlineEdited(false); setShowReestimate(true); }} className="btn-secondary flex items-center gap-2">
                     <RefreshCw className="w-4 h-4" /> Re-estimate
                   </button>
                 </>
@@ -500,7 +536,7 @@ export default function TaskDetailPage() {
                 </button>
               )}
               {canEdit && (
-                <button onClick={() => setShowReestimate(true)} className="btn-secondary flex items-center gap-2">
+                <button onClick={() => { setReestDeadlineEdited(false); setShowReestimate(true); }} className="btn-secondary flex items-center gap-2">
                   <Clock className="w-4 h-4" /> Chỉnh estimate
                 </button>
               )}
@@ -940,7 +976,7 @@ export default function TaskDetailPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Deadline mới</label>
                 <input type="datetime-local" className="input" value={newDeadline}
-                  onChange={(e) => setNewDeadline(e.target.value)} />
+                  onChange={(e) => { setReestDeadlineEdited(true); setNewDeadline(e.target.value); }} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Lý do thay đổi *</label>

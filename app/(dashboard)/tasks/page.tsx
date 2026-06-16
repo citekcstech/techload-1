@@ -8,9 +8,10 @@ import {
   TaskStatus, TaskPriority, TaskSeverity, RequestType, TaskSource,
   STATUS_LABELS, PRIORITY_LABELS, SEVERITY_LABELS, REQUEST_TYPE_LABELS, SOURCE_LABELS,
 } from '@/types';
-import { buildWorkloadMembers, suggestDeadline, suggestAssignees, checkCapacityOnAdd, sortByExecution, scheduleMapForAssignee } from '@/lib/utils/workload';
-import { format, addDays, isValid, parse } from 'date-fns';
-import { CheckSquare, Plus, X, Clock, AlertTriangle, Info, Search, Calendar, CheckCircle, ChevronDown, ChevronRight, Inbox } from 'lucide-react';
+import { buildWorkloadMembers, suggestDeadline, suggestAssignees, checkCapacityOnAdd, sortByExecution, scheduleMapForAssignee, addWorkingHours } from '@/lib/utils/workload';
+import { BUFFER_FACTOR } from '@/types';
+import { format, isValid, parse } from 'date-fns';
+import { CheckSquare, Plus, X, Clock, AlertTriangle, Info, Search, Calendar, CheckCircle, ChevronDown, ChevronRight, Inbox, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Link from 'next/link';
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -35,6 +36,43 @@ const STORAGE_DATE_TIME_FORMAT = "yyyy-MM-dd'T'HH:mm";
 const DISPLAY_DATE_TIME_FORMAT = 'dd/MM/yyyy HH:mm';
 
 const toDisplayDeadline = (value: string) => format(new Date(value), DISPLAY_DATE_TIME_FORMAT);
+
+function buildEmailHtml(p: {
+  employeeName: string; taskTitle: string; deadlineStr: string;
+  hours: number; priority: string; taskLink: string;
+}): string {
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 14px; color: #333; }
+  .greeting { color: #005870; font-weight: bold; font-size: 16px; }
+  .link a { color: #005870; text-decoration: underline; }
+  .signature { margin-top: 30px; }
+  .citek { color: #005870; font-weight: bold; font-size: 22px; margin: 4px 0; }
+  .task-info { background: #f0f9fb; border-left: 4px solid #005870; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; }
+  .task-info p { margin: 4px 0; font-size: 13px; color: #333; }
+  .task-title { font-weight: bold; font-size: 15px; color: #005870; margin-bottom: 8px !important; }
+</style></head><body>
+<p class="greeting">Dear ${p.employeeName},</p>
+<p>Bạn được assign một task mới. Vui lòng nhấn vào link bên dưới để xem chi tiết.</p>
+<div class="task-info">
+  <p class="task-title">${p.taskTitle}</p>
+  <p>Deadline: <strong>${p.deadlineStr}</strong></p>
+  <p>Số giờ ước tính: <strong>${p.hours}h</strong></p>
+  <p>Ưu tiên: <strong>${p.priority}</strong></p>
+</div>
+<p class="link"><a href="${p.taskLink}" target="_blank">${p.taskLink}</a></p>
+<div class="signature">
+  <p>Thanks &amp; Best Regards,</p>
+  <p class="citek">Citek</p>
+  <p style="font-size:12px; color:#666;">
+    Address: No. 75, Str. 41, Van Phuc City, Hiep Binh Phuoc Ward,
+    Thu Duc City, Ho Chi Minh City, Vietnam<br>
+    Website: <a href="https://www.citek.vn">www.citek.vn</a>
+  </p>
+</div>
+</body></html>`;
+}
 
 const parseDisplayDeadline = (value: string) => {
   const parsed = parse(value.trim(), DISPLAY_DATE_TIME_FORMAT, new Date());
@@ -79,6 +117,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
 
   // Filters
+  const [filterTeam, setFilterTeam] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
@@ -87,22 +126,44 @@ export default function TasksPage() {
   const [showBacklog, setShowBacklog] = useState(true);
   const [showCancelled, setShowCancelled] = useState(false);
 
+  type SortField = 'default' | 'created_at' | 'deadline' | 'priority' | 'assignee' | 'hours';
+  type SortDir = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (field === sortField) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="w-3.5 h-3.5 opacity-40" />;
+    return sortDir === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />;
+  };
+
   // Create task form
-  const defaultDeadline = format(addDays(new Date(), 3), STORAGE_DATE_TIME_FORMAT);
+  const computeDefaultDeadline = (hours: number) =>
+    format(addWorkingHours(new Date(), hours), STORAGE_DATE_TIME_FORMAT);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<FormState>({
-    title: '', description: '', project_id: '', assignee_id: '',
-    priority: 'medium', severity: 'medium', request_type: 'consultation', module: '',
-    source: 'client', requester: '', business_impact: 'Trung bình', acceptance_criteria: '',
-    estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
+  const [form, setForm] = useState<FormState>(() => {
+    const deadline = computeDefaultDeadline(4);
+    return {
+      title: '', description: '', project_id: '', assignee_id: '',
+      priority: 'medium', severity: 'medium', request_type: 'consultation', module: '',
+      source: 'client', requester: '', business_impact: 'Trung bình', acceptance_criteria: '',
+      estimated_hours: 4, deadline, estimate_param_id: '',
+    };
   });
-  const [deadlineInput, setDeadlineInput] = useState(toDisplayDeadline(defaultDeadline));
+  const [deadlineInput, setDeadlineInput] = useState(() => toDisplayDeadline(computeDefaultDeadline(4)));
+  const [deadlineManuallyEdited, setDeadlineManuallyEdited] = useState(false);
   const [deadlineError, setDeadlineError] = useState('');
   const [tcodeError, setTcodeError] = useState('');
   const [assigneeError, setAssigneeError] = useState('');
   const [requesterError, setRequesterError] = useState('');
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+
+
   const [projectMembers, setProjectMembers] = useState<TeamMember[]>([]);
   const [suggestedDeadline, setSuggestedDeadline] = useState<string | null>(null);
   const [suggestedAssignees, setSuggestedAssignees] = useState<any[]>([]);
@@ -209,7 +270,17 @@ export default function TasksPage() {
     else setForm((f) => ({ ...f, estimate_param_id: '' }));
   };
 
+  // Tự cập nhật deadline trong giờ làm việc khi estimated_hours thay đổi (trừ khi đã sửa tay)
+  useEffect(() => {
+    if (deadlineManuallyEdited) return;
+    const dl = computeDefaultDeadline(form.estimated_hours);
+    setForm((f) => ({ ...f, deadline: dl }));
+    setDeadlineInput(toDisplayDeadline(dl));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.estimated_hours]);
+
   const handleDeadlineInputChange = (value: string) => {
+    setDeadlineManuallyEdited(true);
     setDeadlineInput(value);
     const parsed = parseDisplayDeadline(value);
     if (parsed) {
@@ -260,14 +331,16 @@ export default function TasksPage() {
   };
 
   const resetForm = () => {
+    const dl = computeDefaultDeadline(4);
     setProjectMembers([]);
     setForm({
       title: '', description: '', project_id: '', assignee_id: '',
       priority: 'medium', severity: 'medium', request_type: 'consultation', module: '',
       source: 'client', requester: '', business_impact: 'Trung bình', acceptance_criteria: '',
-      estimated_hours: 4, deadline: defaultDeadline, estimate_param_id: '',
+      estimated_hours: 4, deadline: dl, estimate_param_id: '',
     });
-    setDeadlineInput(toDisplayDeadline(defaultDeadline));
+    setDeadlineInput(toDisplayDeadline(dl));
+    setDeadlineManuallyEdited(false);
     setDeadlineError('');
     setTcodeError('');
     setAssigneeError('');
@@ -300,7 +373,11 @@ export default function TasksPage() {
     }
 
     const requesterTrimmed = form.requester.trim();
-    if (requesterTrimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterTrimmed)) {
+    if (!requesterTrimmed) {
+      setRequesterError('Vui lòng nhập email người yêu cầu');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterTrimmed)) {
       setRequesterError('Email người yêu cầu không hợp lệ');
       return;
     }
@@ -340,13 +417,14 @@ export default function TasksPage() {
       business_impact: form.business_impact.trim() || null,
       acceptance_criteria: form.acceptance_criteria.trim() || null,
       estimated_hours: form.estimated_hours,
-      deadline: parsedDeadline,
+      deadline: addWorkingHours(new Date(parsedDeadline), form.estimated_hours * (BUFFER_FACTOR - 1)).toISOString(),
       estimate_param_id: form.estimate_param_id || null,
       status: asBacklog ? 'backlog' : 'pending',
     }).select().single();
 
     if (!error && inserted && form.assignee_id && !asBacklog) {
       await persistSchedule(form.assignee_id, [...tasks, inserted as Task]);
+      const { data: scheduled } = await supabase.from('tasks').select('projected_completion').eq('id', inserted.id).single();
 
       const assigneeMember = projectMembers.find((m) => m.user_id === form.assignee_id);
       if (assigneeMember?.profile) {
@@ -356,14 +434,38 @@ export default function TasksPage() {
           assigneeMember.profile.email,
           form.requester.trim(),
         ].filter((e): e is string => !!e)));
+
+        const deadlineStr = format(new Date(scheduled?.projected_completion ?? parsedDeadline), 'dd/MM/yyyy HH:mm');
+        const vars: Record<string, string> = {
+          '{{employeeName}}': assigneeMember.profile.full_name,
+          '{{taskTitle}}': form.title.trim(),
+          '{{deadlineStr}}': deadlineStr,
+          '{{hours}}': String(form.estimated_hours),
+          '{{priority}}': PRIORITY_LABELS[form.priority],
+          '{{taskLink}}': taskLink,
+        };
+        const applyVars = (s: string) => Object.entries(vars).reduce((acc, [k, v]) => acc.replaceAll(k, v), s);
+        const { data: tpl } = await supabase.from('email_templates').select('subject, html_body').eq('name', 'default').single();
+        const htmlBody = tpl ? applyVars(tpl.html_body) : buildEmailHtml({
+          employeeName: assigneeMember.profile.full_name,
+          taskTitle: form.title.trim(),
+          deadlineStr,
+          hours: form.estimated_hours,
+          priority: PRIORITY_LABELS[form.priority],
+          taskLink,
+        });
+        const subject = tpl ? applyVars(tpl.subject) : `RE: ${form.title.trim()}`;
+        const bytes = new TextEncoder().encode(htmlBody);
+        const contentHtmlBase64 = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''));
         fetch('/api/notify-task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            subject: `RE: ${form.title.trim()}`,
-            receiveEmail: emails,
-            taskLink,
-            employeeName: assigneeMember.profile.full_name,
+            subject,
+            receive_email: emails,
+            task_link: taskLink,
+            employee_name: assigneeMember.profile.full_name,
+            contentHtmlBase64,
           }),
         }).catch((err) => console.error('[notify-task] create task error:', err));
       }
@@ -375,13 +477,27 @@ export default function TasksPage() {
     load();
   };
 
+  const teams = useMemo(
+    () => Array.from(new Map(projects.map((p): [string, any] => [(p as any).team?.id ?? '', (p as any).team]).filter(([id]) => id)).entries())
+      .map(([id, team]) => ({ id, name: team?.name ?? '' }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
+    [projects]
+  );
+
+  const visibleProjects = useMemo(
+    () => filterTeam === 'all' ? projects : projects.filter((p) => (p as any).team?.id === filterTeam),
+    [projects, filterTeam]
+  );
+
+
   const baseFiltered = useMemo(() => tasks.filter((t) => {
+    if (filterTeam !== 'all' && (t.project as any)?.team_id !== filterTeam) return false;
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
     if (filterProject !== 'all' && t.project_id !== filterProject) return false;
     if (filterAssignee !== 'all' && t.assignee_id !== filterAssignee) return false;
     if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [tasks, filterStatus, filterProject, filterAssignee, search]);
+  }), [tasks, filterTeam, filterStatus, filterProject, filterAssignee, search]);
 
   const backlogList = useMemo(
     () => baseFiltered.filter((t) => t.status === 'backlog')
@@ -389,10 +505,21 @@ export default function TasksPage() {
     [baseFiltered]
   );
 
-  const activeList = useMemo(
-    () => sortByExecution(baseFiltered.filter((t) => !['completed', 'backlog', 'cancelled'].includes(t.status))),
-    [baseFiltered]
-  );
+  const PRIORITY_ORDER: Record<TaskPriority, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+  const activeList = useMemo(() => {
+    const base = baseFiltered.filter((t) => !['completed', 'backlog', 'cancelled'].includes(t.status));
+    if (sortField === 'default') return sortByExecution(base);
+    return [...base].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'created_at') cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      else if (sortField === 'deadline') cmp = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      else if (sortField === 'priority') cmp = PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
+      else if (sortField === 'assignee') cmp = ((a.assignee as any)?.full_name ?? '').localeCompare((b.assignee as any)?.full_name ?? '', 'vi');
+      else if (sortField === 'hours') cmp = a.estimated_hours - b.estimated_hours;
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [baseFiltered, sortField, sortDir]);
 
   const cancelledList = useMemo(
     () => baseFiltered
@@ -526,20 +653,33 @@ export default function TasksPage() {
           <option value="all">Tất cả trạng thái</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        {teams.length > 1 && (
+          <select
+            className="input w-auto"
+            value={filterTeam}
+            onChange={(e) => { setFilterTeam(e.target.value); setFilterProject('all'); }}
+          >
+            <option value="all">Tất cả team</option>
+            {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
         <select className="input w-auto" value={filterProject} onChange={(e) => setFilterProject(e.target.value)}>
           <option value="all">Tất cả dự án</option>
-          {Array.from(new Map(projects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries())
-            .sort(([, a], [, b]) => (a?.name ?? '').localeCompare(b?.name ?? '', 'vi'))
-            .map(([teamId, team]) => (
-              <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
-                {projects
-                  .filter((p) => ((p as any).team?.id ?? '') === teamId)
-                  .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-              </optgroup>
-            ))}
+          {filterTeam === 'all'
+            ? Array.from(new Map(visibleProjects.map((p) => [(p as any).team?.id ?? '', (p as any).team])).entries())
+              .sort(([, a], [, b]) => (a?.name ?? '').localeCompare(b?.name ?? '', 'vi'))
+              .map(([teamId, team]) => (
+                <optgroup key={teamId} label={team?.name ?? 'Không có team'}>
+                  {visibleProjects
+                    .filter((p) => ((p as any).team?.id ?? '') === teamId)
+                    .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                    .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+              ))
+            : visibleProjects
+              .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+              .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)
+          }
         </select>
         {activeRole !== 'technical' && (
           <select className="input w-auto" value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)}>
@@ -570,6 +710,33 @@ export default function TasksPage() {
               {backlogList.map(renderTaskCard)}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Sort bar — chỉ hiện với lead_technical */}
+      {activeRole === 'lead_technical' && activeList.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-xs text-gray-400 mr-1">Sắp xếp:</span>
+          {([
+            { field: 'default', label: 'Mặc định' },
+            { field: 'created_at', label: 'Ngày tạo' },
+            { field: 'deadline', label: 'Deadline' },
+            { field: 'priority', label: 'Ưu tiên' },
+            { field: 'assignee', label: 'Người thực hiện' },
+            { field: 'hours', label: 'Số giờ' },
+          ] as { field: SortField; label: string }[]).map(({ field, label }) => (
+            <button
+              key={field}
+              onClick={() => handleSort(field)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${sortField === field
+                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+            >
+              {label}
+              <SortIcon field={field} />
+            </button>
+          ))}
         </div>
       )}
 
@@ -725,7 +892,7 @@ export default function TasksPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Người yêu cầu</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Người yêu cầu *</label>
                 <input
                   type="email"
                   className={`input${requesterError ? ' border-red-500' : ''}`}
@@ -776,6 +943,11 @@ export default function TasksPage() {
                     <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                   </div>
                   {deadlineError && <p className="mt-1 text-xs text-red-600">{deadlineError}</p>}
+                  {!deadlineError && form.deadline && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Deadline lưu (+20% buffer): <span className="font-medium text-gray-600">{format(addWorkingHours(new Date(form.deadline), form.estimated_hours * (BUFFER_FACTOR - 1)), 'dd/MM/yyyy HH:mm')}</span>
+                    </p>
+                  )}
                   {suggestedDeadline && suggestedDeadline !== form.deadline && (
                     <button
                       className="mt-1 text-xs text-blue-600 hover:underline flex items-center gap-1"
@@ -858,13 +1030,15 @@ export default function TasksPage() {
             </div>
             <div className="flex gap-2 justify-end px-6 pb-6">
               <button onClick={() => { setShowForm(false); resetForm(); }} className="btn-secondary">Hủy</button>
-              <button
-                onClick={() => createTask(true)}
-                disabled={saving || !form.title.trim() || !form.project_id}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
-              >
-                Lưu tạm (Backlog)
-              </button>
+              {activeRole !== 'technical' && (
+                <button
+                  onClick={() => createTask(true)}
+                  disabled={saving || !form.title.trim() || !form.project_id}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 text-sm"
+                >
+                  Lưu tạm (Backlog)
+                </button>
+              )}
               <button
                 onClick={() => createTask(false)}
                 disabled={saving || !form.title.trim() || !form.project_id}

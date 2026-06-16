@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "type": "msedge",
+            "name": "http://localhost:3000/email-template",
+            "request": "launch",
+            "url": "http://localhost:3000/email-template"
+        }
+    ]
+}
