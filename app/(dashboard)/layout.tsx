@@ -9,29 +9,31 @@ import { createClient } from '@/lib/supabase/client';
 import {
   Activity, LayoutDashboard, Users, FolderOpen,
   CheckSquare, Sliders, Settings, LogOut, ChevronDown,
-  Menu, X, BarChart2, Bell, Mail,
+  Menu, X, BarChart2, Bell, Mail, Shield,
 } from 'lucide-react';
 
 const NAV = [
-  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, leadOnly: false },
-  { href: '/teams', label: 'Teams & Members', icon: Users, leadOnly: false },
-  { href: '/projects', label: 'Dự án', icon: FolderOpen, leadOnly: false },
-  { href: '/tasks', label: 'Tasks', icon: CheckSquare, leadOnly: false },
-  { href: '/reports', label: 'Báo cáo', icon: BarChart2, leadOnly: false },
-  { href: '/notifications', label: 'Thông báo', icon: Bell, leadOnly: false },
-  { href: '/estimate-params', label: 'Estimate Params', icon: Sliders, leadOnly: false },
-  { href: '/email-template', label: 'Mẫu email', icon: Mail, leadOnly: true },
-  { href: '/settings', label: 'Cài đặt', icon: Settings, leadOnly: false },
+  { href: '/dashboard', label: 'Tổng quan', icon: LayoutDashboard, leadOnly: false, adminOnly: false },
+  { href: '/teams', label: 'Teams & Members', icon: Users, leadOnly: false, adminOnly: false },
+  { href: '/projects', label: 'Dự án', icon: FolderOpen, leadOnly: false, adminOnly: false },
+  { href: '/tasks', label: 'Tasks', icon: CheckSquare, leadOnly: false, adminOnly: false },
+  { href: '/reports', label: 'Báo cáo', icon: BarChart2, leadOnly: false, adminOnly: false },
+  { href: '/notifications', label: 'Thông báo', icon: Bell, leadOnly: false, adminOnly: false },
+  { href: '/estimate-params', label: 'Estimate Params', icon: Sliders, leadOnly: false, adminOnly: false },
+  { href: '/email-template', label: 'Mẫu email', icon: Mail, leadOnly: true, adminOnly: false },
+  { href: '/admin', label: 'Quản trị', icon: Shield, leadOnly: false, adminOnly: true },
+  { href: '/settings', label: 'Cài đặt', icon: Settings, leadOnly: false, adminOnly: false },
 ];
 
 const ROLE_COLORS: Record<Role, string> = {
   technical: 'bg-blue-100 text-blue-700',
   lead_technical: 'bg-orange-100 text-orange-700',
   consulting: 'bg-green-100 text-green-700',
+  admin: 'bg-red-100 text-red-700',
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading, activeRole, switchRole, signOut } = useAuth();
+  const { user, profile, loading, activeRole, isAdmin, switchRole, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
@@ -119,7 +121,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {NAV.filter(({ leadOnly }) => !leadOnly || activeRole === 'lead_technical').map(({ href, label, icon: Icon }) => {
+          {NAV.filter(({ leadOnly, adminOnly }) =>
+            (!leadOnly || activeRole === 'lead_technical') &&
+            (!adminOnly || isAdmin)
+          ).map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link

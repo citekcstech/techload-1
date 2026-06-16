@@ -11,3 +11,7 @@ VALUES (
   8
 )
 ON CONFLICT (team_id, user_id) DO NOTHING;
+
+
+
+UPDATE profiles SET roles = ARRAY['admin'] WHERE email = 'nghia.huynh@citek.vn'

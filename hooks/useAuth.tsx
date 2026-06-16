@@ -17,6 +17,7 @@ interface AuthContextValue {
   profile: Profile | null;
   loading: boolean;
   activeRole: Role | null;
+  isAdmin: boolean;
   switchRole: (role: Role) => Promise<void>;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextValue>({
   profile: null,
   loading: true,
   activeRole: null,
+  isAdmin: false,
   switchRole: async () => {},
   refreshProfile: async () => {},
   signOut: async () => {},
@@ -91,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         loading,
         activeRole: profile?.active_role ?? null,
+        isAdmin: profile?.roles?.includes('admin') ?? false,
         switchRole,
         refreshProfile,
         signOut,

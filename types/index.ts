@@ -1,4 +1,4 @@
-export type Role = 'technical' | 'lead_technical' | 'consulting';
+export type Role = 'technical' | 'lead_technical' | 'consulting' | 'admin';
 export type ReopenRootCause = 'missing_requirement' | 'technical_bug' | 'scope_change' | 'external_dependency' | 'estimate_error' | 'other';
 export type TaskStatus = 'backlog' | 'pending' | 'in_progress' | 'blocked' | 'ready_for_review' | 'completed' | 'reopened' | 'cancelled';
 export type CommentType = 'note' | 'question' | 'decision' | 'blocker_update';
@@ -22,6 +22,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   technical: 'Technical',
   lead_technical: 'Lead Technical',
   consulting: 'Consulting',
+  admin: 'Admin',
 };
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {

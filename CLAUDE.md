@@ -96,7 +96,7 @@ Schema lives in `supabase/schema.sql`. Row-Level Security (RLS) policies enforce
 
 | Role | Quyền |
 |---|---|
-| `consultant` (Tư vấn nghiệp vụ) | Tạo task, xem overload theo dự án, đề xuất deadline, chỉnh estimate |
+| `consultant` (Tư vấn nghiệp vụ) | Xem task và báo cáo — **không** có quyền tạo task, chỉnh task, hoặc hủy task |
 | `technical` | Xem task được assign, cập nhật trạng thái, re-estimate, re-open |
 | `lead_technical` | Xem toàn bộ tải trọng team, đề xuất assignee tối ưu |
 | Tất cả | Đăng ký, đăng nhập, đổi mật khẩu, switch role |
