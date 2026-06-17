@@ -212,11 +212,13 @@ export default function TasksPage() {
 
   useEffect(() => { load(); }, [profile?.id, activeRole]);
 
+  const activeTasks = tasks.filter((t) => !['completed', 'cancelled'].includes(t.status));
+
   const buildCreateCapacityWarning = (deadlineValue: string | Date = form.deadline): CreateCapacityWarning | null => {
     if (!form.assignee_id || !form.project_id || !form.estimated_hours) return null;
     const deadline = deadlineValue instanceof Date ? deadlineValue : new Date(deadlineValue);
     if (Number.isNaN(deadline.getTime())) return null;
-    const workload = buildWorkloadMembers(projectMembers, tasks);
+    const workload = buildWorkloadMembers(projectMembers, activeTasks);
     const member = workload.find((m) => m.userId === form.assignee_id);
     if (!member) return null;
     const check = checkCapacityOnAdd(member, form.estimated_hours, deadline, form.priority);
@@ -244,7 +246,7 @@ export default function TasksPage() {
       setCapacityWarning(null);
       return;
     }
-    const workload = buildWorkloadMembers(projectMembers, tasks);
+    const workload = buildWorkloadMembers(projectMembers, activeTasks);
     const dl = new Date(form.deadline);
     const suggestions = suggestAssignees(workload, dl, form.estimated_hours, 3, form.priority);
     setSuggestedAssignees(suggestions);
@@ -252,7 +254,9 @@ export default function TasksPage() {
       const member = workload.find((m) => m.userId === form.assignee_id);
       if (member) {
         const suggested = suggestDeadline(member, form.estimated_hours);
-        setSuggestedDeadline(format(suggested, "yyyy-MM-dd'T'HH:mm"));
+        // Làm tròn lên phút gần nhất để deadline >= projected completion khi format HH:mm
+        const suggestedCeiled = new Date(Math.ceil(suggested.getTime() / 60000) * 60000);
+        setSuggestedDeadline(format(suggestedCeiled, "yyyy-MM-dd'T'HH:mm"));
         setCapacityWarning(buildCreateCapacityWarning(dl));
       } else {
         setSuggestedDeadline(null);
@@ -424,7 +428,6 @@ export default function TasksPage() {
 
     if (!error && inserted && form.assignee_id && !asBacklog) {
       await persistSchedule(form.assignee_id, [...tasks, inserted as Task]);
-      const { data: scheduled } = await supabase.from('tasks').select('projected_completion').eq('id', inserted.id).single();
 
       const assigneeMember = projectMembers.find((m) => m.user_id === form.assignee_id);
       if (assigneeMember?.profile) {
