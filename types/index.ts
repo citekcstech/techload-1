@@ -303,3 +303,40 @@ export interface WorkloadMember {
   availableHoursUntil: (deadline: Date) => number;
   overloadRatio: (deadline: Date) => number; // >1 = overloaded
 }
+
+// Một mốc tuần để dựng dashboard (Thứ 2 → Chủ nhật)
+export interface WeekBucket {
+  key: 'prev' | 'this' | 'next';
+  label: string;       // "Tuần trước" | "Tuần này" | "Tuần sau"
+  start: Date;         // Thứ 2 00:00
+  end: Date;           // Chủ nhật 23:59
+}
+
+// Ô tải trọng của 1 thành viên trong 1 tuần
+export interface MemberWeekCell {
+  capacityHours: number;   // số ngày làm × giờ/ngày
+  demandHours: number;     // tổng effectiveHours task active có deadline trong tuần
+  ratio: number;           // demand / capacity (>1 = quá tải)
+  taskCount: number;       // số task active có deadline trong tuần
+  doneCount: number;       // số task đã hoàn thành có deadline trong tuần
+  willMissCount: number;   // số task active mà lịch dự kiến sẽ trễ
+  weekTasks: Task[];       // toàn bộ task có deadline trong tuần (kèm projected_completion)
+}
+
+// Một hàng trong bảng thành viên × tuần
+export interface MemberWeekRow {
+  userId: string;
+  userName: string;
+  email: string;
+  workingHoursPerDay: number;
+  cells: MemberWeekCell[]; // cùng thứ tự với mảng weeks truyền vào
+}
+
+// Thống kê tổng hợp cho 1 tuần (toàn bộ thành viên đang xem)
+export interface WeekSummary {
+  taskCount: number;
+  totalHours: number;
+  overdueCount: number;      // task active deadline trong tuần & đã quá hạn so với hôm nay
+  doneCount: number;
+  overloadedMembers: number; // số thành viên có ratio ≥ 1
+}

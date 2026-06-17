@@ -3,6 +3,10 @@ import {
   WorkloadMember,
   TeamMember,
   ScheduledTask,
+  WeekBucket,
+  MemberWeekCell,
+  MemberWeekRow,
+  WeekSummary,
   PRIORITY_ORDER,
   STATUS_ORDER,
   BUFFER_FACTOR,
@@ -428,6 +432,106 @@ export function suggestAssignees(
       return a.projectedCompletion.getTime() - b.projectedCompletion.getTime();
     })
     .slice(0, top);
+}
+
+/** Một ngày có nằm trong [start, end] không (so theo mốc thời gian thực). */
+function inRange(d: Date, start: Date, end: Date): boolean {
+  return d >= start && d <= end;
+}
+
+/**
+ * Dựng bảng tải trọng thành viên × tuần cho dashboard.
+ *
+ * Logic:
+ * - GOM task theo `deadline`: task thuộc tuần chứa deadline của nó.
+ * - `demand` = tổng effectiveHours (giờ còn lại × 1.2) của task ACTIVE trong tuần.
+ * - `capacity` = số ngày làm (T2–T6) trong tuần × giờ làm/ngày của thành viên.
+ * - `ratio` = demand / capacity → tô màu xanh/cam/đỏ.
+ * - CẢNH BÁO theo LỊCH: chạy computeSchedule trên toàn bộ task active của thành viên
+ *   (mô phỏng làm tuần tự theo ưu tiên), đếm task trong tuần mà lịch dự kiến sẽ trễ deadline.
+ */
+export function buildWeeklyWorkload(
+  teamMembers: TeamMember[],
+  allTasks: Task[],
+  weeks: WeekBucket[],
+  now: Date = new Date()
+): { rows: MemberWeekRow[]; summaries: WeekSummary[] } {
+  const rows: MemberWeekRow[] = teamMembers.map((tm) => {
+    const profile = tm.profile!;
+    const dailyHours = normalizeDailyHours(tm.working_hours_per_day);
+    const myTasks = allTasks.filter((t) => t.assignee_id === tm.user_id);
+    const activeTasks = myTasks.filter((t) => ACTIVE_STATUSES.includes(t.status));
+
+    // Lịch dự kiến → biết task nào sẽ trễ và mốc hoàn thành dự kiến
+    const schedule = computeSchedule(activeTasks, dailyHours);
+    const missMap = new Map(schedule.map((s) => [s.taskId, s.willMissDeadline]));
+    const projMap = new Map(schedule.map((s) => [s.taskId, s.projectedCompletion]));
+
+    const cells: MemberWeekCell[] = weeks.map((w) => {
+      const capacityHours = getWorkingDays(w.start, w.end) * dailyHours;
+      // Toàn bộ task (mọi trạng thái) có deadline trong tuần, sắp theo thứ tự thực hiện
+      const weekTasks = sortByExecution(
+        myTasks.filter((t) => inRange(new Date(t.deadline), w.start, w.end))
+      ).map((t) => ({
+        ...t,
+        projected_completion: projMap.get(t.id) ?? t.projected_completion,
+      }));
+      const weekActive = weekTasks.filter((t) => ACTIVE_STATUSES.includes(t.status));
+      const demandHours = weekActive.reduce((s, t) => s + effectiveHours(t), 0);
+      const doneCount = weekTasks.filter((t) => t.status === 'completed').length;
+      const willMissCount = weekActive.filter((t) => missMap.get(t.id)).length;
+      const ratio =
+        capacityHours > 0 ? demandHours / capacityHours : demandHours > 0 ? 999 : 0;
+
+      return {
+        capacityHours,
+        demandHours,
+        ratio,
+        taskCount: weekActive.length,
+        doneCount,
+        willMissCount,
+        weekTasks,
+      };
+    });
+
+    return {
+      userId: tm.user_id,
+      userName: profile.full_name,
+      email: profile.email,
+      workingHoursPerDay: dailyHours,
+      cells,
+    };
+  });
+
+  const summaries: WeekSummary[] = weeks.map((w, i) => {
+    let taskCount = 0;
+    let totalHours = 0;
+    let doneCount = 0;
+    let overloadedMembers = 0;
+    let overdueCount = 0;
+
+    for (const row of rows) {
+      const c = row.cells[i];
+      taskCount += c.taskCount;
+      totalHours += c.demandHours;
+      doneCount += c.doneCount;
+      if (c.ratio >= 1) overloadedMembers++;
+    }
+
+    for (const tm of teamMembers) {
+      const overdue = allTasks.filter((t) => {
+        if (t.assignee_id !== tm.user_id) return false;
+        if (!ACTIVE_STATUSES.includes(t.status)) return false;
+        const d = new Date(t.deadline);
+        return inRange(d, w.start, w.end) && d < now;
+      });
+      overdueCount += overdue.length;
+    }
+
+    return { taskCount, totalHours, overdueCount, doneCount, overloadedMembers };
+  });
+
+  return { rows, summaries };
 }
 
 export function overloadColor(ratio: number): string {
