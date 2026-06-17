@@ -26,7 +26,7 @@ const ROLE_BADGE: Record<Role, string> = {
 };
 
 export default function AdminPage() {
-  const { isAdmin, loading } = useAuth();
+  const { activeRole, loading } = useAuth();
   const router = useRouter();
   const supabase = createClient();
 
@@ -46,11 +46,11 @@ export default function AdminPage() {
   const [success, setSuccess] = useState('');
 
   useEffect(() => {
-    if (!loading && !isAdmin) router.replace('/dashboard');
-  }, [loading, isAdmin, router]);
+    if (!loading && activeRole !== 'admin') router.replace('/dashboard');
+  }, [loading, activeRole, router]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (activeRole !== 'admin') return;
     supabase
       .from('profiles')
       .select('id, email, full_name, roles, active_role, created_at')
@@ -59,7 +59,7 @@ export default function AdminPage() {
         setUsers((data as UserRow[]) ?? []);
         setFetching(false);
       });
-  }, [isAdmin]);
+  }, [activeRole]);
 
   function openEditRoles(user: UserRow) {
     setEditRoleUser(user);

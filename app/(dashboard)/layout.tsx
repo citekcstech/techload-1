@@ -33,7 +33,7 @@ const ROLE_COLORS: Record<Role, string> = {
 };
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading, activeRole, isAdmin, switchRole, signOut } = useAuth();
+  const { user, profile, loading, activeRole, switchRole, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
@@ -123,7 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {NAV.filter(({ leadOnly, adminOnly }) =>
             (!leadOnly || activeRole === 'lead_technical') &&
-            (!adminOnly || isAdmin)
+            (!adminOnly || activeRole === 'admin')
           ).map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (

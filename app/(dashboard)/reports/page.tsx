@@ -4,7 +4,24 @@ import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Task, TaskReopen, Profile, Project, Team, TeamMember, ReopenRootCause, ROOT_CAUSE_LABELS } from '@/types';
-import { BarChart2, RefreshCw, AlertTriangle, TrendingUp, Target, Users } from 'lucide-react';
+import { BarChart2, RefreshCw, AlertTriangle, TrendingUp, Target, Users, Download } from 'lucide-react';
+
+// Xuất dữ liệu ra CSV (UTF-8 có BOM) — Excel mở trực tiếp, hiển thị đúng tiếng Việt
+function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (v: string | number) => {
+    const s = String(v ?? '');
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(escape).join(',')).join('\r\n');
+  const BOM = '﻿'; // BOM giúp Excel nhận diện UTF-8
+  const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // ─── Rework types ─────────────────────────────────────────────────────────────
 
@@ -318,14 +335,65 @@ export default function ReportsPage() {
       : 'px-4 py-2 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-100';
   }
 
+  // ─── Xuất Excel theo tab đang xem ─────────────────────────────────────────────
+
+  function exportCurrentTab() {
+    if (activeTab === 'rework') {
+      downloadCSV(
+        'bao-cao-rework.csv',
+        ['Task', 'Dự án', 'Assignee', 'Nguyên nhân', 'Lý do', 'Ngày re-open'],
+        filteredReopens.map((r) => [
+          r.task?.title ?? r.task_id,
+          r.task?.project?.name ?? '',
+          (r.profile as Profile | undefined)?.full_name ?? '',
+          r.root_cause ? ROOT_CAUSE_LABELS[r.root_cause] : 'Chưa phân loại',
+          r.reason ?? '',
+          new Date(r.created_at).toLocaleDateString('vi-VN'),
+        ])
+      );
+    } else if (activeTab === 'accuracy') {
+      downloadCSV(
+        'bao-cao-do-chinh-xac-estimate.csv',
+        ['Task', 'Dự án', 'Assignee', 'Baseline (h)', 'Estimate (h)', 'Thực tế (h)', 'Sai lệch (h)', 'Sai lệch (%)'],
+        filteredAccuracyTasks.map((t) => {
+          const dev = t.actual_hours - t.estimated_hours;
+          const pct = t.estimated_hours > 0 ? (dev / t.estimated_hours) * 100 : 0;
+          return [
+            t.title,
+            t.project?.name ?? '',
+            t.assignee?.full_name ?? '',
+            t.baseline_estimated_hours ?? '',
+            t.estimated_hours,
+            t.actual_hours,
+            dev.toFixed(1),
+            pct.toFixed(1),
+          ];
+        })
+      );
+    } else {
+      downloadCSV(
+        'bao-cao-utilization.csv',
+        ['Thành viên', 'Team', 'Giờ thực tế', 'Giờ estimate', 'Tổng tasks'],
+        utilMembers.map((m) => [
+          m.userName, m.teamName, m.totalActualHours.toFixed(1), m.totalEstimatedHours.toFixed(1), m.taskCount,
+        ])
+      );
+    }
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <BarChart2 className="w-6 h-6 text-blue-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Báo cáo</h1>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <BarChart2 className="w-6 h-6 text-blue-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Báo cáo</h1>
+        </div>
+        <button onClick={exportCurrentTab} className="btn-secondary flex items-center gap-2 text-sm">
+          <Download className="w-4 h-4" /> Xuất Excel
+        </button>
       </div>
 
       {/* Tab navigation */}

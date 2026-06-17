@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,7 +27,9 @@ import {
   ChevronRight,
   CalendarDays,
   X,
+  Download,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const STATUS_BADGE: Record<string, string> = {
   backlog: 'bg-gray-100 text-gray-600',
@@ -54,6 +56,27 @@ export default function DashboardPage() {
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<{ row: MemberWeekRow; weekIndex: number } | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  // Kéo thả di chuyển popup chi tiết task
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null);
+  useEffect(() => {
+    setDragOffset({ x: 0, y: 0 }); // reset vị trí khi mở popup mới
+  }, [selected, selectedProject]);
+  const startDrag = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return; // không kéo khi bấm nút đóng
+    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: dragOffset.x, baseY: dragOffset.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onDrag = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    setDragOffset({
+      x: dragRef.current.baseX + (e.clientX - dragRef.current.startX),
+      y: dragRef.current.baseY + (e.clientY - dragRef.current.startY),
+    });
+  };
+  const endDrag = () => { dragRef.current = null; };
 
   useEffect(() => {
     const load = async () => {
@@ -71,7 +94,10 @@ export default function DashboardPage() {
       const teamsQuery = supabase.from('teams').select('*');
       const { data: teamsData } = await (isLead ? teamsQuery : teamsQuery.in('id', teamIds));
       setTeams(teamsData ?? []);
-      if (teamsData?.[0]) setSelectedTeamId(teamsData[0].id);
+      // Lead mặc định xem "Team Support All"; nếu không có thì lấy team đầu tiên
+      const defaultTeam =
+        (isLead && teamsData?.find((t) => t.name === 'Team Support All')) || teamsData?.[0];
+      if (defaultTeam) setSelectedTeamId(defaultTeam.id);
 
       const projsQuery = supabase.from('projects').select('*, team:teams(name)');
       const { data: projs } = await (isLead ? projsQuery : projsQuery.in('team_id', teamIds));
@@ -139,6 +165,35 @@ export default function DashboardPage() {
       .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
   }, [tasks, visibleMembers, windowStart, windowEnd, now]);
 
+  // Xuất chi tiết từng task — mỗi tuần (tuần này / tuần sau) một sheet Excel
+  const exportWorkload = () => {
+    const wb = XLSX.utils.book_new();
+    // Chỉ xuất tuần này (index 1) và tuần sau (index 2)
+    [1, 2].forEach((wi) => {
+      const w = weeks[wi];
+      const data = rows.flatMap((row) =>
+        row.cells[wi].weekTasks.map((t) => ({
+          'Thành viên': row.userName,
+          'Task': t.title,
+          'Dự án': (t.project as Project | undefined)?.name ?? '',
+          'Trạng thái': STATUS_LABELS[t.status],
+          'Ưu tiên': PRIORITY_LABELS[t.priority],
+          'Giờ ước tính': t.estimated_hours,
+          'Deadline': format(new Date(t.deadline), 'dd/MM/yyyy'),
+        }))
+      );
+      const ws = XLSX.utils.json_to_sheet(
+        data.length > 0 ? data : [{ 'Thành viên': '(Không có task)' }]
+      );
+      ws['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+      // Tên sheet: "Tuần này (16-22.06)" — bỏ ký tự không hợp lệ, tối đa 31 ký tự
+      const sheetName = `${w.label} ${format(w.start, 'dd.MM')}-${format(w.end, 'dd.MM')}`.slice(0, 31);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    const teamName = (teams.find((t) => t.id === selectedTeamId)?.name ?? 'Team').replace(/[\\/:*?"<>|]/g, '');
+    XLSX.writeFile(wb, `Tai trong ${teamName} - ${monthLabel}.xlsx`);
+  };
+
   const monthLabel = `Tháng ${anchor.getMonth() + 1}/${anchor.getFullYear()}`;
   const isCurrentWeek = startOfWeek(anchor, { weekStartsOn: 1 }).getTime() === startOfWeek(now, { weekStartsOn: 1 }).getTime();
 
@@ -198,6 +253,13 @@ export default function DashboardPage() {
               Hôm nay
             </button>
           )}
+          <button
+            onClick={exportWorkload}
+            disabled={rows.length === 0}
+            className="btn-secondary text-sm py-1.5 flex items-center gap-2 disabled:opacity-50"
+          >
+            <Download className="w-4 h-4" /> Xuất Excel
+          </button>
         </div>
       </div>
 
@@ -388,7 +450,13 @@ export default function DashboardPage() {
                 const total = projTasks.length;
                 const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                 return (
-                  <div key={p.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedProject(p)}
+                    className="text-left p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-blue-50/60 hover:border-blue-300 transition-colors"
+                    title="Bấm để xem chi tiết task của dự án"
+                  >
                     <p className="font-medium text-gray-900 truncate">{p.name}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{(p.team as Team | undefined)?.name}</p>
                     <div className="mt-3">
@@ -399,7 +467,7 @@ export default function DashboardPage() {
                         <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
           </div>
@@ -416,10 +484,16 @@ export default function DashboardPage() {
             onClick={() => setSelected(null)}
           >
             <div
-              className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col"
+              className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col"
               onClick={(e) => e.stopPropagation()}
+              style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
             >
-              <div className="flex items-start justify-between px-5 py-4 border-b border-gray-100">
+              <div
+                className="flex items-start justify-between px-5 py-4 border-b border-gray-100 cursor-move select-none"
+                onPointerDown={startDrag}
+                onPointerMove={onDrag}
+                onPointerUp={endDrag}
+              >
                 <div>
                   <h3 className="font-semibold text-gray-900">{selected.row.userName}</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
@@ -427,13 +501,14 @@ export default function DashboardPage() {
                     <span className={overloadColor(cell.ratio)}>
                       {Math.round(cell.demandHours)}h / {Math.round(cell.capacityHours)}h
                     </span>
+                    {' · '}{cell.weekTasks.length} task
                   </p>
                 </div>
                 <button onClick={() => setSelected(null)} className="p-1 hover:bg-gray-100 rounded-md text-gray-400">
                   <X className="w-5 h-5" />
                 </button>
               </div>
-              <div className="overflow-y-auto px-5 py-3 space-y-2">
+              <div className="overflow-y-auto px-5 py-3 space-y-2" style={{ maxHeight: 'min(60vh, 580px)' }}>
                 {cell.weekTasks.map((t) => {
                   const willMiss =
                     ACTIVE.includes(t.status) &&
@@ -466,6 +541,85 @@ export default function DashboardPage() {
                     </Link>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal chi tiết task của 1 dự án */}
+      {selectedProject && (() => {
+        const projTasks = tasks
+          .filter((t) => t.project_id === selectedProject.id)
+          .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime());
+        const done = projTasks.filter((t) => t.status === 'completed').length;
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+            onClick={() => setSelectedProject(null)}
+          >
+            <div
+              className="bg-white rounded-xl shadow-xl w-full max-w-lg flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+              style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+            >
+              <div
+                className="flex items-start justify-between px-5 py-4 border-b border-gray-100 cursor-move select-none"
+                onPointerDown={startDrag}
+                onPointerMove={onDrag}
+                onPointerUp={endDrag}
+              >
+                <div>
+                  <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-gray-400" /> {selectedProject.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {(selectedProject.team as Team | undefined)?.name}
+                    {' · '}{projTasks.length} task · {done} xong
+                  </p>
+                </div>
+                <button onClick={() => setSelectedProject(null)} className="p-1 hover:bg-gray-100 rounded-md text-gray-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto px-5 py-3 space-y-2" style={{ maxHeight: 'min(60vh, 580px)' }}>
+                {projTasks.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-6">Dự án chưa có task nào</p>
+                ) : (
+                  projTasks.map((t) => {
+                    const willMiss =
+                      ACTIVE.includes(t.status) &&
+                      !!t.projected_completion &&
+                      new Date(t.projected_completion) > new Date(t.deadline);
+                    return (
+                      <Link
+                        key={t.id}
+                        href={`/tasks/${t.id}`}
+                        className="block p-3 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-gray-900">{t.title}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_BADGE[t.status]}`}>
+                            {STATUS_LABELS[t.status]}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-gray-500">
+                          <span>{(t.assignee as { full_name?: string } | undefined)?.full_name ?? 'Chưa assign'}</span>
+                          <span>Ưu tiên: {PRIORITY_LABELS[t.priority]}</span>
+                          <span>{t.estimated_hours}h</span>
+                          <span className={willMiss ? 'text-red-600 font-medium' : ''}>
+                            Hạn: {format(new Date(t.deadline), 'dd/MM/yyyy')}
+                          </span>
+                          {willMiss && (
+                            <span className="text-red-600 flex items-center gap-0.5">
+                              <AlertTriangle className="w-3.5 h-3.5" /> dự kiến trễ
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
