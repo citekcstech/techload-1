@@ -1,6 +1,7 @@
 # 🚀 Hướng dẫn Deploy TechLoad lên Vercel
 
 ## Yêu cầu
+
 - Node.js 18+
 - Tài khoản [Supabase](https://supabase.com) (miễn phí)
 - Tài khoản [Vercel](https://vercel.com) (miễn phí)
@@ -11,27 +12,32 @@
 ## Bước 1: Cài đặt Supabase
 
 ### 1.1 Tạo project Supabase
+
 1. Vào https://supabase.com → **New Project**
 2. Đặt tên project, chọn region **Southeast Asia (Singapore)**
 3. Đặt database password (lưu lại!) fE8&lD$f8zieKB%6
 4. Chờ ~2 phút để project khởi tạo
 
 ### 1.2 Chạy Schema SQL
+
 1. Vào **SQL Editor** trong Supabase dashboard
 2. Tạo **New Query**
 3. Copy toàn bộ nội dung file `supabase/schema.sql` và paste vào
 4. Nhấn **Run** (Ctrl+Enter)
 5. Kiểm tra không có lỗi
 
-
 ### 1.3 Lấy API Keys
+
 Vào **Settings → API**:
+
 - Copy **Project URL** → đây là `NEXT_PUBLIC_SUPABASE_URL` sb_secret_0-pZLxp8ftVCr5rsDZb8mA_DG8AKs43
 - Copy **anon/public key** → đây là `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` sb_publishable_LoQ9yDhWdsgnFf0H_ekeSA_qIQkV9GO
 
-### 1.4 Cấu hình Auth (quan trọng!) 
+### 1.4 Cấu hình Auth (quan trọng!)
+
 https://vercel.com/sang-thanh-s-projects
 Vào **Authentication → URL Configuration**:
+
 - **Site URL**: `https://your-app.vercel.app` (điền sau khi có URL Vercel)
 - **Redirect URLs**: thêm các URL sau:
   - `https://your-app.vercel.app/**`
@@ -60,23 +66,28 @@ git push -u origin main
 ## Bước 3: Deploy lên Vercel
 
 ### 3.1 Import project
+
 1. Vào https://vercel.com → **Add New Project**
 2. Chọn **Import Git Repository** → chọn repo `techload`
 3. Framework: **Next.js** (tự detect)
 
 ### 3.2 Thêm Environment Variables
+
 Trong bước Configure Project, thêm:
 
-| Key | Value |
-|-----|-------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://xxxx.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...` |
+| Key                                    | Value                      |
+| -------------------------------------- | -------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`             | `https://xxxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_...`       |
 
 ### 3.3 Deploy
+
 Nhấn **Deploy** và chờ ~2 phút
 
 ### 3.4 Cập nhật Supabase URL
+
 Sau khi có URL Vercel (VD: `https://techload-abc123.vercel.app`):
+
 - Quay lại Supabase → **Authentication → URL Configuration**
 - Cập nhật **Site URL**: `https://techload-abc123.vercel.app`
 - Cập nhật **Redirect URLs**, thêm:
@@ -88,11 +99,13 @@ Sau khi có URL Vercel (VD: `https://techload-abc123.vercel.app`):
 ## Bước 4: Sử dụng lần đầu
 
 ### 4.1 Tạo tài khoản đầu tiên
+
 1. Vào URL app của bạn
 2. Click **Đăng ký**
 3. Nhập thông tin, chọn role
 
 ### 4.2 Thiết lập ban đầu (khuyến nghị thứ tự)
+
 1. **Tạo Team**: Vào Teams → Tạo team mới
 2. **Thêm thành viên**: Invite các thành viên đăng ký tài khoản trước, rồi add vào team
 3. **Tạo Dự án**: Vào Dự án → Thêm dự án gắn với team
@@ -103,22 +116,24 @@ Sau khi có URL Vercel (VD: `https://techload-abc123.vercel.app`):
 
 ## Cấu trúc phân quyền
 
-| Role | Quyền |
-|------|-------|
+| Role                 | Quyền                                                               |
+| -------------------- | ------------------------------------------------------------------- |
 | **Tư vấn nghiệp vụ** | Tạo task, xem overload theo dự án, đề xuất deadline, chỉnh estimate |
-| **Technical** | Xem task được assign, cập nhật trạng thái, re-estimate, re-open |
-| **Lead Technical** | Tất cả quyền trên + xem toàn bộ tải trọng team, đề xuất assignee |
+| **Technical**        | Xem task được assign, cập nhật trạng thái, re-estimate, re-open     |
+| **Lead Technical**   | Tất cả quyền trên + xem toàn bộ tải trọng team, đề xuất assignee    |
 
 ---
 
 ## Deploy Production bằng Terminal (Vercel CLI)
 
 ### Yêu cầu
+
 ```bash
 npm install -g vercel
 ```
 
 ### Lần đầu (setup + deploy)
+
 ```bash
 # 1. Đăng nhập Vercel (mở browser để xác thực)
 vercel login
@@ -138,6 +153,7 @@ Trả lời các câu hỏi:
 Sau khi deploy xong, app live tại URL hiển thị trong output.
 
 ### Từ lần 2 trở đi
+
 ```bash
 # Commit code mới
 git add -A
@@ -151,6 +167,7 @@ vercel --prod
 > **Lưu ý:** Nếu repo đã kết nối GitHub trên Vercel Dashboard, mỗi lần `git push origin main` sẽ **tự động trigger deploy** mà không cần chạy `vercel --prod`.
 
 ### Kiểm tra sau deploy
+
 1. Vào **Vercel Dashboard → Project → Settings → Environment Variables**
 2. Đảm bảo có đủ 2 biến:
    - `NEXT_PUBLIC_SUPABASE_URL`
@@ -179,17 +196,21 @@ npm run dev
 ## Troubleshooting
 
 ### Lỗi "Invalid JWT" hoặc không login được
+
 - Kiểm tra lại Supabase URL và Anon Key trong Vercel env vars
 - Redeploy sau khi thay đổi env vars
 
 ### Lỗi không tạo được profile sau khi đăng ký
+
 - Kiểm tra trigger `on_auth_user_created` đã được tạo chưa trong Supabase
 - Chạy lại SQL: `SELECT * FROM pg_trigger WHERE tgname = 'on_auth_user_created';`
 
 ### Redirect loop (loop login)
+
 - Kiểm tra Supabase Auth Redirect URLs đã thêm domain Vercel chưa
 
 ### Lỗi RLS "new row violates row-level security"
+
 - Đảm bảo đã chạy đầy đủ phần `RLS Policies` trong schema.sql
 
 ---
